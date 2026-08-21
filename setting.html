@@ -486,24 +486,7 @@
             COMPOUND: 4000,
             GENERIC: 3000
         };
-function classifyQualificationV80(qualificationText, majorText) {
-    // 🛡️ 1. เช็ก "กฎรายคน" ก่อน (เผื่อมีเคสพิเศษที่ล็อกไว้)
-    if (typeof personOverrides !== 'undefined' && currentPersonKey && personOverrides[currentPersonKey]) {
-        return personOverrides[currentPersonKey];
-    }
 
-    // 🛡️ 2. ให้ "exactMajorRules" (ที่มึงกดปุ่มน้ำเงินบันทึกสาชาหลัก) มีอำนาจสูงสุดเป็นอันดับ 2 ทันที!
-    if (majorText && v78MasterData && v78MasterData.exactMajorRules) {
-        const cleanMajor = normalizeField(majorText);
-        const foundExact = v78MasterData.exactMajorRules.find(r => normalizeField(r.pattern) === cleanMajor);
-        if (foundExact) {
-            return foundExact.group;
-        }
-    }
-
-    // 3. กฎเกณฑ์พจนานุกรมและเงื่อนไขอื่นๆ ต่อจากนี้...
-    // (ปล่อยโค้ดเดิมของพวก exactDegreeRules หรือ compoundMajorRules ไว้ข้างล่างตามเดิม)
-}
         function escapeHTML(value) {
             return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
         }
@@ -524,6 +507,29 @@ function classifyQualificationV80(qualificationText, majorText) {
             const result = emptyValues.has(s) ? "" : s.trim();
             normCache.set(text, result);
             return result;
+        }
+
+        /**
+         * กรองคำในวงเล็บที่ไม่ใช่ชื่อสาขาวิชาจริง (คำว่าไม่ระบุ, ค่าว่าง, คำบอกประเภทโครงการ)
+         */
+        function cleanAndValidateMajor(rawMajor) {
+            if (!rawMajor || typeof rawMajor !== 'string') return "";
+            let cleaned = normalizeField(rawMajor);
+            if (!cleaned) return "";
+
+            const invalidPatterns = [
+                /^ไม่ระบุ$/i, /^ไม่มี$/i, /^ทั่วไป$/i, /^รอกำหนด$/i,
+                /^-+$/, /^\.+$/, /^กลุ่ม.*ไม่ระบุวิชาเอก$/i
+            ];
+            if (invalidPatterns.some(rx => rx.test(cleaned))) return "";
+
+            const programBlacklist = [
+                "โครงการพิเศษ", "ภาคพิเศษ", "นานาชาติ", "หลักสูตรนานาชาติ",
+                "เสาร์-อาทิตย์", "นอกเวลาราชการ", "ต่อเนื่อง", "ภาคค่ำ"
+            ];
+            if (programBlacklist.some(term => cleaned.includes(term))) return "";
+
+            return cleaned;
         }
 
         function prepareRulesIndex(src) {
@@ -605,7 +611,10 @@ function classifyQualificationV80(qualificationText, majorText) {
             return false;
         }
 
-    function classifyQualificationV80(lvl, rawDegree, rawMajor, personKey, rowContext) {
+        /**
+         * ฟังก์ชันจัดกลุ่มคุณวุฒิ V80: Major-First Policy + Degree Fallback
+         */
+        function classifyQualificationV80(lvl, rawDegree, rawMajor, personKey, rowContext) {
             const dataSrc = v78MasterData || {};
 
             if (v78MasterData.personApproved && v78MasterData.personApproved[personKey]) {
@@ -616,17 +625,17 @@ function classifyQualificationV80(qualificationText, majorText) {
                 return { group: dataSrc.personOverrides[personKey], status: "OVERRIDE", reason: "PERSON_OVERRIDE", specificity: TIERS.PERSON, matchedRule: personKey, confidence: 1.0 };
             }
 
-            // 🛡️ เช็กทั้งช่องสาขา (rawMajor) และช่องวุฒิ (rawDegree) พร้อมกัน ป้องกันข้อมูลสลับช่องหรือสะกดเหลื่อมกัน
-            const cleanMajorCheck = normalizeField(rawMajor);
-            const cleanDegreeCheck = normalizeField(rawDegree);
-            
+            const cleanM = cleanAndValidateMajor(rawMajor);
+            const cleanD = normalizeField(rawDegree);
+
+            // Step 0: ตรวจสอบ Exact Major Override (ปุ่มน้ำเงิน)
             if (dataSrc.exactMajorRules) {
                 const foundExact = dataSrc.exactMajorRules.find(r => {
                     const pNorm = normalizeField(r.pattern);
-                    return (cleanMajorCheck && pNorm === cleanMajorCheck) || (cleanDegreeCheck && pNorm === cleanDegreeCheck);
+                    return (cleanM && pNorm === cleanM) || (!cleanM && cleanD && pNorm === cleanD);
                 });
                 if (foundExact) {
-                    return { group: foundExact.group, status: "AUTO", reason: "EXACT_MAJOR", matchedRule: foundExact.pattern, sourceField: "major/degree", confidence: 1.0, specificity: 9999 };
+                    return { group: foundExact.group, status: "AUTO", reason: cleanM ? "EXACT_MAJOR" : "EXACT_DEGREE", matchedRule: foundExact.pattern, sourceField: cleanM ? "major" : "degree", confidence: 1.0, specificity: 9999 };
                 }
             }
 
@@ -636,14 +645,13 @@ function classifyQualificationV80(qualificationText, majorText) {
                 return { group: "none", status: "BASIC_EDU", reason: "BELOW_BACHELOR_EXCLUDE" };
             }
 
-            const memoKey = `${lvl}|${rawDegree}|${rawMajor}`;
+            const memoKey = `${lvl}|${cleanD}|${cleanM}`;
             if (classCache.has(memoKey)) return classCache.get(memoKey);
 
-            const cleanD = normalizeField(rawDegree);
-            const cleanM = normalizeField(rawMajor);
             const fullText = `${cleanD} ${cleanM}`.trim();
             const candidates = [];
 
+            // 1. ตรวจสอบคุณวุฒิเฉพาะตำแหน่ง (Specific Qualifications)
             const specs = dataSrc.specificQualifications || [];
             for (let i = 0; i < specs.length; i++) {
                 const spec = specs[i];
@@ -656,6 +664,7 @@ function classifyQualificationV80(qualificationText, majorText) {
                 }
             }
 
+            // 2. ตรวจสอบ Policy Overrides
             const policies = dataSrc.policyOverrides || [];
             for (let i = 0; i < policies.length; i++) {
                 const pol = policies[i];
@@ -665,6 +674,7 @@ function classifyQualificationV80(qualificationText, majorText) {
                 }
             }
 
+            // 3. ตรวจสอบ Degree + Major Combo
             const combos = dataSrc.degreeMajorCombinations || [];
             for (let i = 0; i < combos.length; i++) {
                 const combo = combos[i];
@@ -675,6 +685,7 @@ function classifyQualificationV80(qualificationText, majorText) {
                 }
             }
 
+            // 4. ตรวจสอบ Major-First (ถ้ามีสาขาจริงในวงเล็บ)
             if (cleanM) {
                 const compounds = dataSrc.compoundMajorRules || [];
                 for (let i = 0; i < compounds.length; i++) {
@@ -685,9 +696,7 @@ function classifyQualificationV80(qualificationText, majorText) {
                         candidates.push({ group: comp.group, tier: isProf ? TIERS.PROFESSIONAL_MAJOR : TIERS.COMPOUND, patternLength: pNorm.length, matchedRule: comp.pattern, reason: "COMPOUND_MAJOR", sourceField: "major", confidence: 0.96, specificity: (Number(comp.specificity) || pNorm.length) + (isProf ? 500 : 0) });
                     }
                 }
-            }
 
-            if (cleanM) {
                 const exactMajors = dataSrc.exactMajorRules || [];
                 for (let i = 0; i < exactMajors.length; i++) {
                     const em = exactMajors[i];
@@ -709,6 +718,7 @@ function classifyQualificationV80(qualificationText, majorText) {
                 }
             }
 
+            // 5. Degree Fallback (ตรวจจากชื่อปริญญาหลัก เมื่อไม่มีสาขา หรือยังจับคู่ไม่ได้)
             if (cleanD) {
                 const exactDegrees = dataSrc.exactDegreeRules || [];
                 for (let i = 0; i < exactDegrees.length; i++) {
@@ -720,6 +730,7 @@ function classifyQualificationV80(qualificationText, majorText) {
                 }
             }
 
+            // 6. Generic Keywords Fallback
             const generics = dataSrc.genericKeywords || [];
             for (let i = 0; i < generics.length; i++) {
                 const gen = generics[i];
@@ -901,8 +912,10 @@ function classifyQualificationV80(qualificationText, majorText) {
                         scannedRawLevelsMap.get(rawLvlKey).push({ degree: deg, major: maj, isConflict: tierEvalAudit.isConflict, reason: tierEvalAudit.reason });
                     }
 
-                    const cleanM = normalizeField(maj), cleanD = normalizeField(deg);
-                    const branch = cleanM || cleanD;
+                    // ใช้ Major-First Key หรือ Fallback ไปที่ Degree
+                    const validM = cleanAndValidateMajor(maj);
+                    const cleanD = normalizeField(deg);
+                    const branch = validM || cleanD;
                     if (!branch) continue;
 
                     const tierEval = evaluateTierSafe(lvl, deg, maj);
@@ -1272,7 +1285,7 @@ function classifyQualificationV80(qualificationText, majorText) {
                     <input type="text" class="search-inp" placeholder="🔍 กรองชื่อ, สำนัก/กอง, หรือสถานะ..." oninput="onPersonFilterInput('${escapeHTML(b)}', this.value)" style="margin-bottom:6px;">
                     <div class="person-audit-box" id="person-list-container"></div>
                 </div>
-                <div><div class="fld-label">🎯 -- เอาออกจากการจัดกลุ่ม --:</div><select id="single-group-select" class="fld-input"><option value="">-- ยังไม่จัดกลุ่ม (Inbox) --</option>${grpOptions}</select></div>
+                <div><div class="fld-label">🎯 กำหนดกลุ่มวิชาชีพ:</div><select id="single-group-select" class="fld-input"><option value="">-- ยังไม่จัดกลุ่ม (Inbox) --</option>${grpOptions}</select></div>
                 <div style="display:flex; gap:6px; margin-top:5px;">
                     <button class="btn-sm primary" style="flex:1;padding:8px;" onclick="saveSingle('${escapeHTML(b)}')">💾 บันทึกกฎสาขาวิชาเอก</button>
                     <button class="btn-sm danger" style="padding:8px;" onclick="unassignBranch('${escapeHTML(b)}')">🗑️ ยกเลิกการจัดกลุ่ม</button>
@@ -1308,13 +1321,11 @@ function classifyQualificationV80(qualificationText, majorText) {
             renderGroups(); renderQueue(); updateKPI();
             if (selectedBranch) selectBranch(selectedBranch);
         }
-async function saveSingle(b) {
+
+        async function saveSingle(b) {
             const selectEl = document.getElementById('single-group-select');
             let grp = selectEl ? selectEl.value : "";
             
-            console.log("📌 กำลังบันทึกสาขา:", b);
-            console.log("📌 ค่า Group Key ที่เลือกได้:", grp);
-
             if (!grp) { 
                 alert("❌ กรุณาเลือกกลุ่มวิชาชีพจาก Dropdown ด้านล่างก่อน!"); 
                 return; 
@@ -1330,9 +1341,7 @@ async function saveSingle(b) {
             v78MasterData.exactMajorRules = v78MasterData.exactMajorRules.filter(r => normalizeField(r.pattern) !== cleanTarget);
             v78MasterData.exactMajorRules.unshift({ pattern: cleanPattern, group: grp });
             
-            if (typeof clearBranchCache === "function") clearBranchCache();
-            if (typeof classCache !== "undefined" && classCache.clear) classCache.clear();
-
+            clearBranchCache();
             prepareRulesIndex(v78MasterData);
             
             renderGroups(); 
@@ -1341,11 +1350,13 @@ async function saveSingle(b) {
             selectBranch(b);
 
             await saveToServer(true); 
-            alert(`✅ บันทึกสำเร็จ! สาขา "${cleanPattern}" ผูกกับรหัสกลุ่ม "${grp}" เรียบร้อย`);
+            alert(`✅ บันทึกสำเร็จ! สาขา "${cleanPattern}" ผูกกับกลุ่ม "${getGroupName(grp)}" เรียบร้อย`);
         }
+
         function unassignBranch(b) {
             pushSnapshot();
             if (v78MasterData.exactMajorRules) v78MasterData.exactMajorRules = v78MasterData.exactMajorRules.filter(r => normalizeField(r.pattern) !== normalizeField(b));
+            clearBranchCache();
             prepareRulesIndex(v78MasterData);
             renderGroups(); renderQueue(); updateKPI(); selectBranch(b);
         }
@@ -1362,6 +1373,7 @@ async function saveSingle(b) {
             });
             selectedCheckboxes.clear();
             document.getElementById('bulk-count').innerText = "0";
+            clearBranchCache();
             prepareRulesIndex(v78MasterData);
             renderGroups(); renderQueue(); updateKPI();
             if (selectedBranch) selectBranch(selectedBranch);
@@ -1371,6 +1383,7 @@ async function saveSingle(b) {
             if (undoStack.length === 0) return;
             v78MasterData = undoStack.pop();
             if (undoStack.length === 0) document.getElementById('btn-undo').disabled = true;
+            clearBranchCache();
             prepareRulesIndex(v78MasterData);
             renderGroups(); renderQueue(); updateKPI();
             if (selectedBranch) selectBranch(selectedBranch);
@@ -1445,6 +1458,7 @@ async function saveSingle(b) {
             if (!confirm(`คุณต้องการลบกลุ่มนี้ใช่หรือไม่?`)) return;
             pushSnapshot();
             v78MasterData.groups = (v78MasterData.groups || []).filter(g => g.key !== groupKey);
+            clearBranchCache();
             prepareRulesIndex(v78MasterData);
             renderGroups(); renderQueue(); updateKPI(); populateBulkDropdown();
         }
@@ -1880,6 +1894,7 @@ async function saveSingle(b) {
                         pushSnapshot();
                         v78MasterData = imported;
                         if (!v78MasterData.tierDefaults) v78MasterData.tierDefaults = [1, 2, 3, 4, 5, 6];
+                        clearBranchCache();
                         prepareRulesIndex(v78MasterData);
                         renderGroups();
                         renderQueue();
@@ -1902,12 +1917,12 @@ async function saveSingle(b) {
         }
         function closeDictionaryModal() { document.getElementById('dict-modal').classList.add('hidden'); }
 
-    function renderDictionaryTable() {
+        function renderDictionaryTable() {
             const tbody = document.getElementById('dict-table-body');
             tbody.innerHTML = (v78MasterData.groups || []).map(g => {
                 const kwSet = new Set();
                 (v78MasterData.exactMajorRules || []).filter(r => r.group === g.key).forEach(r => kwSet.add(r.pattern));
-                (v78MasterData.exactDegreeRules || []).filter(r => r.group === g.key).forEach(r => kwSet.add(r.pattern)); // 🛡️ เพิ่มบรรทัดนี้ เพื่อให้ดึงป้ายจาก exactDegreeRules มาโชว์ด้วย
+                (v78MasterData.exactDegreeRules || []).filter(r => r.group === g.key).forEach(r => kwSet.add(r.pattern));
                 (v78MasterData.compoundMajorRules || []).filter(r => r.group === g.key).forEach(r => kwSet.add(r.pattern));
                 (v78MasterData.specificQualifications || []).filter(r => r.group === g.key).forEach(r => { if (r.token) kwSet.add(r.token); if (r.aliases) r.aliases.forEach(a => kwSet.add(a)); });
                 const tagsHTML = Array.from(kwSet).map(kw => `<span class="dict-tag">${escapeHTML(kw)}</span>`).join(' ') || '<span style="color:#94a3b8; font-style:italic;">ยังไม่มีคำค้น</span>';
@@ -1958,6 +1973,7 @@ async function saveSingle(b) {
             });
 
             closeAddDictRule();
+            clearBranchCache();
             prepareRulesIndex(v78MasterData);
             renderDictionaryTable(); renderGroups(); renderQueue(); updateKPI();
             await saveToServer(true);
@@ -1989,13 +2005,12 @@ async function saveSingle(b) {
 
         function closeReviewModal() { document.getElementById('review-modal').classList.add('hidden'); }
 
-       async function saveToServer(isSilent = false) {
+        async function saveToServer(isSilent = false) {
             if (!isSilent) closeReviewModal();
             try {
                 v78MasterData.version = 80;
                 v78MasterData.lastModified = new Date().toISOString();
                 
-                // 🛡️ บังคับแนบฟิลด์ tierDefaults และ tierOverrides ส่งขึ้น Cloud ไปด้วย
                 const payloadData = {
                     ...v78MasterData,
                     tierDefaults: v78MasterData.tierDefaults || [1, 2, 3, 4, 5, 6],
@@ -2015,6 +2030,7 @@ async function saveSingle(b) {
                 }
             } catch (e) { alert("❌ เกิดข้อผิดพลาด: " + e.message); }
         }
+
         function approvePerson(personId) {
             pushSnapshot();
             if (!v78MasterData.personApproved) v78MasterData.personApproved = {};
