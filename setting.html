@@ -532,41 +532,6 @@
             return cleaned;
         }
 
-        /**
-         * รวมคำค้นทั้งหมดในกลุ่มจากทุก Array ให้ตรงกัน 100%
-         */
-        function getAllGroupKeywords(grpKey) {
-            if (!grpKey || !v78MasterData) return [];
-            const kwSet = new Set();
-
-            (v78MasterData.exactMajorRules || [])
-                .filter(r => r.group === grpKey && r.pattern)
-                .forEach(r => kwSet.add(r.pattern.trim()));
-
-            (v78MasterData.exactDegreeRules || [])
-                .filter(r => r.group === grpKey && r.pattern)
-                .forEach(r => kwSet.add(r.pattern.trim()));
-
-            (v78MasterData.compoundMajorRules || [])
-                .filter(r => r.group === grpKey && r.pattern)
-                .forEach(r => kwSet.add(r.pattern.trim()));
-
-            (v78MasterData.genericKeywords || [])
-                .filter(r => r.group === grpKey && r.keyword)
-                .forEach(r => kwSet.add(r.keyword.trim()));
-
-            (v78MasterData.specificQualifications || [])
-                .filter(r => r.group === grpKey)
-                .forEach(r => {
-                    if (r.token) kwSet.add(r.token.trim());
-                    if (Array.isArray(r.aliases)) {
-                        r.aliases.forEach(a => { if (a) kwSet.add(a.trim()); });
-                    }
-                });
-
-            return Array.from(kwSet).filter(Boolean);
-        }
-
         function prepareRulesIndex(src) {
             if (!src) return;
             (src.specificQualifications || []).forEach(spec => {
@@ -705,7 +670,7 @@
                 const pol = policies[i];
                 const pNorm = pol._norm !== undefined ? pol._norm : normalizeField(pol.pattern);
                 if (pNorm && fullText.includes(pNorm)) {
-                    candidates.push({ group: pol.group, tier: TIERS.POLICY, patternLength: pNorm.length, matchedRule: pol.pattern, reason: "POLICY", sourceField: "degree+major", confidence: 0.98, specificity: pNorm.length });
+                    candidates.push({ group: pol.group, tier: TIERS.POLICY, patternLength: pNorm.length, matchedRule: pol.pattern, reason: pol.reason || "POLICY", sourceField: "degree+major", confidence: 0.98, specificity: pNorm.length });
                 }
             }
 
@@ -716,7 +681,7 @@
                 const dNorm = combo._dNorm !== undefined ? combo._dNorm : normalizeField(combo.degreeToken);
                 const mNorm = combo._mNorm !== undefined ? combo._mNorm : normalizeField(combo.majorToken);
                 if (dNorm && mNorm && cleanD.includes(dNorm) && cleanM.includes(mNorm)) {
-                    candidates.push({ group: combo.group, tier: TIERS.COMBO, patternLength: dNorm.length + mNorm.length, matchedRule: `${combo.degreeToken} + ${combo.majorToken}`, reason: "COMBO", sourceField: "degree+major", confidence: 0.99, specificity: dNorm.length + mNorm.length });
+                    candidates.push({ group: combo.group, tier: TIERS.COMBO, patternLength: dNorm.length + mNorm.length, matchedRule: `${combo.degreeToken} + ${combo.majorToken}`, reason: combo.reason || "COMBO", sourceField: "degree+major", confidence: 0.99, specificity: dNorm.length + mNorm.length });
                 }
             }
 
@@ -1943,7 +1908,8 @@
             reader.readAsText(file);
         }
 
-        function openDictionaryModal() { 
+        async function openDictionaryModal() { 
+            await loadRules(); 
             renderDictionaryTable(); 
             document.getElementById('dict-test-input').value = ''; 
             document.getElementById('dict-test-result').innerText = 'ผลลัพธ์: -'; 
@@ -1954,8 +1920,12 @@
         function renderDictionaryTable() {
             const tbody = document.getElementById('dict-table-body');
             tbody.innerHTML = (v78MasterData.groups || []).map(g => {
-                const keywords = getAllGroupKeywords(g.key);
-                const tagsHTML = keywords.map(kw => `<span class="dict-tag">${escapeHTML(kw)}</span>`).join(' ') || '<span style="color:#94a3b8; font-style:italic;">ยังไม่มีคำค้น</span>';
+                const kwSet = new Set();
+                (v78MasterData.exactMajorRules || []).filter(r => r.group === g.key).forEach(r => kwSet.add(r.pattern));
+                (v78MasterData.exactDegreeRules || []).filter(r => r.group === g.key).forEach(r => kwSet.add(r.pattern));
+                (v78MasterData.compoundMajorRules || []).filter(r => r.group === g.key).forEach(r => kwSet.add(r.pattern));
+                (v78MasterData.specificQualifications || []).filter(r => r.group === g.key).forEach(r => { if (r.token) kwSet.add(r.token); if (r.aliases) r.aliases.forEach(a => kwSet.add(a)); });
+                const tagsHTML = Array.from(kwSet).map(kw => `<span class="dict-tag">${escapeHTML(kw)}</span>`).join(' ') || '<span style="color:#94a3b8; font-style:italic;">ยังไม่มีคำค้น</span>';
 
                 return `
                     <tr>
@@ -1969,64 +1939,74 @@
         }
 
         function openEditGroupKeywords(grpKey) {
-            const g = (v78MasterData.groups || []).find(item => item.key === grpKey); 
-            if (!g) return;
-            
-            const allKeywords = getAllGroupKeywords(grpKey);
-            
+            const g = (v78MasterData.groups || []).find(item => item.key === grpKey); if (!g) return;
+            const kwSet = new Set();
+            (v78MasterData.exactMajorRules || []).filter(r => r.group === grpKey).forEach(r => kwSet.add(r.pattern));
+            (v78MasterData.compoundMajorRules || []).filter(r => r.group === grpKey).forEach(r => kwSet.add(r.pattern));
+            (v78MasterData.genericKeywords || []).filter(r => r.group === grpKey).forEach(r => kwSet.add(r.keyword));
             document.getElementById('modal-dict-rule-id').value = grpKey;
             document.getElementById('dict-rule-modal-title').innerText = `✏️ จัดการคำค้นกลุ่ม: ${g.name}`;
-            document.getElementById('modal-dict-aliases').value = allKeywords.join(', ');
+            document.getElementById('modal-dict-aliases').value = Array.from(kwSet).join(', ');
             document.getElementById('dict-rule-modal').classList.remove('hidden');
         }
 
         function closeAddDictRule() { document.getElementById('dict-rule-modal').classList.add('hidden'); }
 
         async function saveDictRuleModal() {
-            const grpKey = document.getElementById('modal-dict-rule-id').value;
-            const rawAliases = document.getElementById('modal-dict-aliases').value;
-            const allKeywords = Array.from(new Set(rawAliases.split(',').map(a => a.trim()).filter(Boolean)));
+    const grpKey = document.getElementById('modal-dict-rule-id').value;
+    const rawAliases = document.getElementById('modal-dict-aliases').value;
+    
+    // แยกคำ คัดกรองคำว่าง และตัดคำซ้ำ
+    const allKeywords = Array.from(new Set(
+        rawAliases.split(',')
+            .map(a => a.trim())
+            .filter(Boolean)
+    ));
 
-            pushSnapshot();
-            if (!v78MasterData.exactMajorRules) v78MasterData.exactMajorRules = [];
-            if (!v78MasterData.genericKeywords) v78MasterData.genericKeywords = [];
-            if (!v78MasterData.exactDegreeRules) v78MasterData.exactDegreeRules = [];
-            if (!v78MasterData.compoundMajorRules) v78MasterData.compoundMajorRules = [];
+    pushSnapshot();
 
-            v78MasterData.exactMajorRules = v78MasterData.exactMajorRules.filter(r => r.group !== grpKey);
-            v78MasterData.genericKeywords = v78MasterData.genericKeywords.filter(r => r.group !== grpKey);
-            v78MasterData.exactDegreeRules = v78MasterData.exactDegreeRules.filter(r => r.group !== grpKey);
-            v78MasterData.compoundMajorRules = v78MasterData.compoundMajorRules.filter(r => r.group !== grpKey);
+    // 1. ตั้งค่าโครงสร้าง Array เริ่มต้น
+    if (!v78MasterData.exactMajorRules) v78MasterData.exactMajorRules = [];
+    if (!v78MasterData.genericKeywords) v78MasterData.genericKeywords = [];
+    if (!v78MasterData.exactDegreeRules) v78MasterData.exactDegreeRules = [];
+    if (!v78MasterData.compoundMajorRules) v78MasterData.compoundMajorRules = [];
+    if (!v78MasterData.specificQualifications) v78MasterData.specificQualifications = [];
 
-            allKeywords.forEach(kw => {
-                if (/บัณฑิต|มหาบัณฑิต|ดุษฎีบัณฑิต|bachelor|master|doctor/i.test(kw)) {
-                    v78MasterData.exactDegreeRules.push({ pattern: kw, group: grpKey });
-                } else {
-                    v78MasterData.exactMajorRules.push({ pattern: kw, group: grpKey });
-                }
-                v78MasterData.genericKeywords.push({ keyword: kw, group: grpKey });
-            });
+    // 2. ล้างคำเก่าทั้งหมดของกลุ่มนี้ออกจากทุก Array
+    v78MasterData.exactMajorRules = v78MasterData.exactMajorRules.filter(r => r.group !== grpKey);
+    v78MasterData.genericKeywords = v78MasterData.genericKeywords.filter(r => r.group !== grpKey);
+    v78MasterData.exactDegreeRules = v78MasterData.exactDegreeRules.filter(r => r.group !== grpKey);
+    v78MasterData.compoundMajorRules = v78MasterData.compoundMajorRules.filter(r => r.group !== grpKey);
+    v78MasterData.specificQualifications = v78MasterData.specificQualifications.filter(r => r.group !== grpKey);
 
-            closeAddDictRule();
-            clearBranchCache();
-            prepareRulesIndex(v78MasterData);
-            renderDictionaryTable(); 
-            renderGroups(); 
-            renderQueue(); 
-            updateKPI();
-            await saveToServer(true);
+    // 3. บันทึกคำชุดใหม่ลงหมวดหมู่ที่ถูกต้อง
+    allKeywords.forEach(kw => {
+        if (/บัณฑิต|มหาบัณฑิต|ดุษฎีบัณฑิต|bachelor|master|doctor/i.test(kw)) {
+            v78MasterData.exactDegreeRules.push({ pattern: kw, group: grpKey });
+        } else {
+            v78MasterData.exactMajorRules.push({ pattern: kw, group: grpKey });
         }
+        v78MasterData.genericKeywords.push({ keyword: kw, group: grpKey });
+    });
 
-        function testV80EngineMatch(testText) {
-            const resEl = document.getElementById('dict-test-result');
-            if (!testText.trim()) { resEl.innerText = "ผลลัพธ์: -"; return; }
-            const res = classifyQualificationV80("ปริญญาตรีหรือเทียบเท่า", testText, testText, null, null);
-            if (res.group && res.group !== 'none' && res.group !== 'other' && res.group !== 'review') {
-                resEl.innerHTML = `ผลลัพธ์: <span style="color:#16a34a;">✅ ${escapeHTML(getGroupName(res.group))} [กฎ: ${escapeHTML(res.matchedRule)}]</span>`;
-            } else {
-                resEl.innerHTML = `ผลลัพธ์: <span style="color:#dc2626;">⚠️ ${res.status}: ${res.reason} (${res.matchedRule})</span>`;
-            }
-        }
+    // 4. ปิดหน้าต่างและล้างแคชประมวลผลทันที
+    closeAddDictRule();
+    clearBranchCache();
+    prepareRulesIndex(v78MasterData);
+
+    // 5. วาดตารางและ UI ใหม่ทันทีจาก Memory
+    renderDictionaryTable(); 
+    renderGroups(); 
+    renderQueue(); 
+    updateKPI();
+
+    // 6. ส่งขึ้น Cloud
+    try {
+        await saveToServer(true);
+    } catch (err) {
+        console.error("Save to server failed:", err);
+    }
+}
 
         function openReviewModal() {
             const container = document.getElementById('review-list');
@@ -2067,6 +2047,7 @@
                     undoStack = []; document.getElementById('btn-undo').disabled = true;
                 }
             } catch (e) { alert("❌ เกิดข้อผิดพลาด: " + e.message); }
+            
         }
 
         function approvePerson(personId) {
