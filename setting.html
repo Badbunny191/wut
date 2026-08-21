@@ -1,0 +1,2031 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบบริหารจัดการ Master Data คุณวุฒิ — สตง.</title>
+    <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <style>
+        :root { --primary: #0f172a; --accent: #2563eb; --success: #16a34a; --warning: #d97706; --danger: #dc2626; --bg: #f8fafc; --card: #fff; --border: #e2e8f0; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg); padding: 14px; color: #1e293b; font-size: 13px; user-select: none; }
+        .app { max-width: 100%; margin: 0 auto; display: none; flex-direction: column; gap: 12px; height: calc(100vh - 28px); }
+        .app.visible { display: flex; }
+        .kpi-row { display: flex; gap: 10px; align-items: center; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px 16px; flex-wrap: wrap; box-shadow: 0 1px 3px rgba(0,0,0,0.02); flex-shrink: 0; }
+        .kpi-item { display: flex; flex-direction: column; min-width: 75px; }
+        .kpi-label { font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; }
+        .kpi-val { font-size: 18px; font-weight: 800; color: var(--primary); }
+        .kpi-val.warn { color: var(--warning); }
+        .kpi-val.ok { color: var(--success); }
+        .kpi-sub { font-size: 10px; color: #64748b; font-weight: 600; margin-top: 1px; }
+        .progress-wrap { flex: 1; min-width: 160px; display: flex; align-items: center; gap: 8px; }
+        .progress-bar { flex: 1; height: 10px; background: #e2e8f0; border-radius: 5px; overflow: hidden; }
+        .progress-fill { height: 100%; background: var(--accent); transition: width 0.4s; border-radius: 5px; }
+        .btn-sm { padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: #fff; cursor: pointer; font-size: 11.5px; font-weight: 600; white-space: nowrap; transition: all 0.15s; }
+        .btn-sm:hover { background: #f1f5f9; }
+        .btn-sm.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+        .btn-sm.primary:hover { background: #1d4ed8; }
+        .btn-sm.danger { background: #fef2f2; color: var(--danger); border-color: #fca5a5; }
+        .btn-sm.danger:hover { background: var(--danger); color: #fff; }
+        .btn-sm.success { background: var(--success); color: #fff; border-color: var(--success); }
+        .btn-sm.purple { background: #7c3aed; color: #fff; border-color: #7c3aed; }
+        .btn-sm.purple:hover { background: #6d28d9; }
+        .btn-sm.cyan { background: #0284c7; color: #fff; border-color: #0284c7; }
+        .btn-sm.cyan:hover { background: #0369a1; }
+        
+        .workspace-grid { display: flex; flex-direction: row; flex: 1; min-height: 0; position: relative; width: 100%; }
+        .panel { background: var(--card); border: 1px solid var(--border); border-radius: 10px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.02); height: 100%; min-width: 220px; }
+        #panel-left { width: 320px; }
+        #panel-mid { flex: 1.2; }
+        #panel-right { flex: 1.3; min-width: 320px; }
+        
+        .resizer { width: 8px; cursor: col-resize; background: transparent; transition: background 0.2s; position: relative; z-index: 10; flex-shrink: 0; }
+        .resizer:hover, .resizer.resizing { background: #cbd5e1; }
+        .resizer::after { content: ""; position: absolute; top: 50%; left: 3px; width: 2px; height: 24px; transform: translateY(-50%); background: #94a3b8; border-radius: 1px; }
+
+        .panel-hd { padding: 11px 16px; background: #f8fafc; border-bottom: 1px solid var(--border); font-weight: 700; font-size: 13px; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+        .panel-body { flex: 1; overflow-y: auto; padding: 10px; }
+        .search-inp { width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; margin-bottom: 8px; outline: none; }
+        .search-inp:focus { border-color: var(--accent); }
+        
+        .group-item { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-radius: 6px; cursor: grab; font-size: 12px; border: 1px solid transparent; margin-bottom: 3px; background: #fff; transition: background 0.15s, transform 0.1s; }
+        .group-item:active { cursor: grabbing; }
+        .group-item.dragging { opacity: 0.4; background: #e2e8f0; }
+        .group-item.drag-over { border-top: 2px solid var(--accent); }
+        .group-item:hover { background: #f1f5f9; }
+        .group-item.active { background: #eff6ff; border-color: var(--accent); font-weight: 700; color: var(--accent); }
+        .group-badge { background: #e2e8f0; color: #334155; padding: 2px 7px; border-radius: 10px; font-size: 10px; font-weight: 700; margin-left: 6px; }
+        .group-item.active .group-badge { background: var(--accent); color: #fff; }
+        .group-actions { display: none; gap: 4px; align-items: center; }
+        .group-item:hover .group-actions { display: flex; }
+        .action-icon-btn { background: #fff; border: 1px solid #cbd5e1; border-radius: 4px; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 11px; }
+        
+        .tabs { display: flex; gap: 4px; margin-bottom: 8px; flex-wrap: wrap; }
+        .tab-btn { padding: 5px 10px; border-radius: 14px; border: 1px solid var(--border); background: #fff; cursor: pointer; font-size: 11px; font-weight: 600; white-space: nowrap; }
+        .tab-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+        .tab-btn.miskey-tab.active { background: var(--danger); border-color: var(--danger); }
+        .queue-item { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 5px; cursor: pointer; font-size: 12.5px; background: #fff; }
+        .queue-item:hover { background: #f8fafc; border-color: var(--accent); }
+        .queue-item.selected { border-color: var(--accent); background: #f0f9ff; }
+        .queue-item.miskey { border-left: 4px solid var(--danger); background: #fff5f5; }
+        .queue-item .info { flex: 1; min-width: 0; }
+        .queue-item .name { font-weight: 700; font-size: 12.5px; margin-bottom: 2px; }
+        .queue-item .meta { font-size: 10.5px; color: #64748b; }
+        .bulk-bar { padding: 9px 12px; background: #fefce8; border-top: 1px solid #fde68a; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+        .detail-box { padding: 14px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 12px; user-select: text; }
+        .fld-label { font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 3px; }
+        .fld-val { background: #f8fafc; border: 1px solid var(--border); border-radius: 6px; padding: 9px 12px; font-size: 12.5px; line-height: 1.5; }
+        .person-audit-box { max-height: 320px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; padding: 8px; background: #fff; display: flex; flex-direction: column; gap: 8px; }
+        .person-row { padding: 10px 12px; border-bottom: 1px solid #f1f5f9; background: #fafafa; border-radius: 6px; font-size: 12px; line-height: 1.5; }
+        .person-row-hd { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+        .person-override-sel { padding: 3px 8px; font-size: 11.5px; border: 1px solid var(--border); border-radius: 4px; background: #fff; font-family: inherit; }
+        textarea.fld-input, select.fld-input { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; font-family: inherit; }
+        .modal-ov { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); z-index: 2000; display: flex; align-items: center; justify-content: center; }
+        .modal-box { background: #fff; border-radius: 10px; width: 95%; max-width: 950px; max-height: 88vh; display: flex; flex-direction: column; overflow: hidden; }
+        .modal-hd { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; font-weight: 700; font-size: 13.5px; background: #f8fafc; }
+        .modal-body { padding: 16px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 10px; }
+        .hidden { display: none !important; }
+        .block-ov { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #0f172a; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 99999; }
+        .diff-added { color: #16a34a; background: #dcfce7; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
+        .diff-modified { color: #d97706; background: #fef3c7; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
+        .diff-row { padding: 6px; border-bottom: 1px solid #f1f5f9; font-size: 12px; }
+        .badge-reason { font-size: 11px; padding: 3px 8px; border-radius: 4px; display: inline-block; font-weight: 600; margin-top: 5px; }
+        .bg-conf-high { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+        .bg-conf-conflict { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+        .split-summary-box { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 10px 12px; font-size: 12px; }
+
+        .dict-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .dict-table th { background: #f1f5f9; padding: 8px; border: 1px solid var(--border); text-align: left; font-weight: bold; }
+        .dict-table td { padding: 8px; border: 1px solid var(--border); vertical-align: top; }
+        .dict-tag { display: inline-block; background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; padding: 2px 8px; border-radius: 12px; margin: 2px; font-size: 11px; }
+
+        .tier-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 10px; }
+        .tier-card { background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; justify-content: space-between; }
+        .tier-card-hd { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+        .tier-badge-def { font-size: 10px; padding: 2px 6px; border-radius: 10px; font-weight: 700; user-select: none; cursor: pointer; transition: transform 0.1s ease; }
+        .tier-badge-def:hover { transform: scale(1.05); }
+        .tier-badge-def.checked { background: #dcfce7; color: #15803d; border: 1px solid #86efac; }
+        .tier-badge-def.unchecked { background: #f1f5f9; color: #64748b; border: 1px solid #cbd5e1; }
+        .tier-chip-box { display: flex; flex-wrap: wrap; gap: 4px; background: #f8fafc; border: 1px solid #f1f5f9; padding: 6px; border-radius: 6px; max-height: 110px; overflow-y: auto; }
+        .tier-chip { background: #fff; border: 1px solid var(--border); padding: 2px 6px; border-radius: 4px; font-size: 11px; display: inline-flex; align-items: center; gap: 4px; }
+        .tier-chip-btn { color: var(--accent); cursor: pointer; border: none; background: none; font-weight: bold; font-size: 11px; padding: 0 2px; }
+        .tier-chip-btn:hover { color: #1d4ed8; }
+        .tier-chip-del { color: var(--danger); cursor: pointer; border: none; background: none; font-weight: bold; font-size: 11px; padding: 0 2px; }
+        .tier-chip-del:hover { color: #991b1b; }
+    </style>
+</head>
+<body>
+
+    <div id="security-block" class="block-ov">
+        <h2 style="color:#ef4444;">🚨 Access Denied</h2>
+        <p>กำลังตรวจสอบสิทธิ์เข้าใช้งานระบบ HR MDM...</p>
+    </div>
+
+    <div class="app" id="app-root">
+        <div class="kpi-row">
+            <div class="kpi-item">
+                <span class="kpi-label">📥 สาขาตกค้างใน Inbox</span>
+                <span id="kpi-inbox" class="kpi-val warn">0</span>
+                <span id="kpi-inbox-persons" class="kpi-sub">0 คน</span>
+            </div>
+            <div class="kpi-item"><span class="kpi-label">📋 กฎที่เปิดใช้งาน</span><span id="kpi-rules" class="kpi-val">0</span><span class="kpi-sub">กฎมาตรฐาน</span></div>
+            <div class="kpi-item">
+                <span class="kpi-label">✅ สาขาที่จัดกลุ่มแล้ว</span>
+                <span id="kpi-mapped" class="kpi-val ok">0</span>
+                <span id="kpi-mapped-persons" class="kpi-sub">0 คน</span>
+            </div>
+            <div class="kpi-item"><span class="kpi-label">🚨 รายการต้องตรวจสอบ</span><span id="kpi-miskey" class="kpi-val" style="color:#dc2626;">0</span><span class="kpi-sub">รายการขัดแย้ง</span></div>
+            <div class="progress-wrap">
+                <span class="kpi-label">ความครอบคลุม:</span>
+                <div class="progress-bar"><div id="progress-fill" class="progress-fill" style="width:0%"></div></div>
+                <span id="kpi-pct" style="font-weight:700;">0%</span>
+            </div>
+            <button class="btn-sm cyan" onclick="openTierAuditModal()">📋 ควบคุม 10 ระดับการศึกษา</button>
+            <button class="btn-sm purple" onclick="openDictionaryModal()">📖 จัดการพจนานุกรม</button>
+            <button class="btn-sm" style="background:#0284c7; color:#fff; border-color:#0284c7;" onclick="openAuditMatrixModal()">📊 สรุปภาพรวม Matrix</button>
+            <button class="btn-sm" style="background:#059669; color:#fff; border-color:#059669;" onclick="exportMasterDataJSON()">📥 สำรองข้อมูล (JSON)</button>
+            <button class="btn-sm" style="background:#d97706; color:#fff; border-color:#d97706;" onclick="triggerImportJSON()">📤 นำเข้าข้อมูล (JSON)</button>
+            <input type="file" id="import-json-file" class="hidden" accept=".json" onchange="handleImportJSONFile(event)">
+            <a href="/" class="btn-sm" style="background:#475569;color:#fff;text-decoration:none;">🏠 หน้าหลัก</a>
+            <button class="btn-sm" onclick="handleLogout()">ออกจากระบบ</button>
+        </div>
+
+        <div class="workspace-grid" id="workspace-container">
+            <div class="panel" id="panel-left">
+                <div class="panel-hd">
+                    <span>🗂️ กลุ่มสายงานวิชาชีพ (ลากสลับลำดับได้)</span>
+                    <button class="btn-sm primary" onclick="openAddGroup()">+ เพิ่มกลุ่ม</button>
+                </div>
+                <div style="padding:8px;">
+                    <input type="text" class="search-inp" id="grp-search" placeholder="🔍 ค้นหากลุ่ม..." oninput="onSearchGroupInput()">
+                </div>
+                <div class="panel-body" id="groups-list"></div>
+            </div>
+
+            <div class="resizer" id="resizer-1"></div>
+
+            <div class="panel" id="panel-mid">
+                <div class="panel-hd">
+                    <span>📌 คิวจัดหมวดหมู่คุณวุฒิ</span>
+                    <span id="queue-count" style="font-size:11px;background:#fef3c7;color:#b45309;padding:2px 8px;border-radius:10px;">0</span>
+                </div>
+                <div style="padding:8px;">
+                    <input type="text" class="search-inp" id="queue-search" placeholder="🔍 ค้นในคิว..." oninput="onSearchQueueInput()">
+                    <div class="tabs" id="queue-tabs">
+                        <button class="tab-btn active" data-tab="all">📋 ทั้งหมด</button>
+                        <button class="tab-btn" data-tab="new">🆕 ยังไม่จัด (<span id="tab-count-new">0</span>)</button>
+                        <button class="tab-btn" data-tab="done">✅ จัดแล้ว (<span id="tab-count-done">0</span>)</button>
+                        <button class="tab-btn" data-tab="override">🔀 กำหนดรายคน (<span id="tab-count-override">0</span>)</button>
+                        <button class="tab-btn miskey-tab" data-tab="miskey">🚨 รายการขัดแย้ง (<span id="tab-count-miskey">0</span>)</button>
+                    </div>
+                </div>
+                <div class="panel-body" id="queue-list"></div>
+                <div class="bulk-bar" id="bulk-bar">
+                    <span style="font-size:11px;font-weight:700;">เลือก <span id="bulk-count">0</span> สาขา:</span>
+                    <select id="bulk-group-select"><option value="">-- เลือกกลุ่ม --</option></select>
+                    <button class="btn-sm success" onclick="bulkAssign()">📍 จัดกลุ่มที่เลือกพร้อมกัน</button>
+                    <button class="btn-sm" onclick="selectAllVisible(true)">☑️</button>
+                    <button class="btn-sm" onclick="selectAllVisible(false)">☐</button>
+                </div>
+            </div>
+
+            <div class="resizer" id="resizer-2"></div>
+
+            <div class="panel" id="panel-right">
+                <div class="panel-hd">
+                    <span>🔍 รายละเอียดสาขา & รายคน</span>
+                    <button class="btn-sm" onclick="undoLast()" id="btn-undo" disabled>↩️ เลิกทำ (Undo)</button>
+                </div>
+                <div class="detail-box" id="detail-panel">
+                    <div style="text-align:center;color:#94a3b8;margin-top:40px;">👈 คลิกเลือกรายการในคิวเพื่อตรวจสอบและตั้งค่า</div>
+                </div>
+            </div>
+        </div>
+
+        <button class="btn-sm success" style="width:100%;padding:14px;font-size:15px;border-radius:8px;flex-shrink:0;" onclick="openReviewModal()">
+            💾 ตรวจสอบรายการเปลี่ยนแปลงและบันทึกขึ้น Cloud
+        </button>
+    </div>
+
+    <!-- AUDIT MATRIX MODAL -->
+    <div id="audit-matrix-modal" class="modal-ov hidden">
+        <div class="modal-box">
+            <div class="modal-hd">
+                <span>📊 ตารางสรุปโครงสร้าง Master Data Matrix (การตรวจทานและกระทบยอด)</span>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <button class="btn-sm success" style="padding:5px 10px;" onclick="generateMasterAuditExcel()">📥 ดาวน์โหลด Excel สรุปทั้งหมด (3 Sheets)</button>
+                    <button class="btn-sm danger" onclick="closeAuditMatrixModal()">✕ ปิด</button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <div style="font-size:12px; color:#64748b; line-height:1.5;">
+                    💡 ตารางสรุปความครอบคลุมของการจัดกลุ่มคุณวุฒิทั้งองค์กร จำแนกตามกลุ่มวิชาชีพหลัก
+                </div>
+                <div style="max-height:480px; overflow-y:auto; border:1px solid var(--border); border-radius:6px;">
+                    <table class="dict-table">
+                        <thead>
+                            <tr>
+                                <th style="width:50px; text-align:center;">ลำดับ</th>
+                                <th>กลุ่มสายงาน</th>
+                                <th style="width:130px; text-align:center;">จำนวนสาขา</th>
+                                <th style="width:170px; text-align:center;">จำนวนคนทั้งหมด</th>
+                                <th style="width:130px; text-align:center;">สัดส่วนร้อยละ</th>
+                            </tr>
+                        </thead>
+                        <tbody id="audit-matrix-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TIER AUDIT WORKBENCH MODAL -->
+    <div id="tier-audit-modal" class="modal-ov hidden">
+        <div class="modal-box" style="max-width:1050px;">
+            <div class="modal-hd">
+                <span>📋 ควบคุมและตรวจสอบ 10 ระดับการศึกษามาตรฐาน</span>
+                <button class="btn-sm danger" onclick="closeTierAuditModal()">✕ ปิด</button>
+            </div>
+            <div class="modal-body">
+                <div style="background:#f8fafc; border:1px solid var(--border); padding:10px; border-radius:6px; display:flex; gap:8px; align-items:center;">
+                    <span style="font-weight:bold; font-size:12px;">🧪 ทดสอบข้อความระดับ:</span>
+                    <input type="text" id="tier-sim-input" placeholder="พิมพ์ข้อความระดับการศึกษา เพื่อทดสอบ (เช่น ป.บัณฑิตวิชาชีพครู)..." class="search-inp" style="margin-bottom:0; flex:1;" oninput="testTierSimulation(this.value)">
+                    <span id="tier-sim-result" style="font-weight:bold; color:var(--accent); font-size:12px;">ผลลัพธ์: -</span>
+                </div>
+
+                <div class="tabs" style="margin-bottom:4px;">
+                    <button class="tab-btn active" id="tier-tab-btn-1" onclick="switchTierAuditSubTab('grid')">📋 มุมมอง 10 ระดับมาตรฐาน</button>
+                    <button class="tab-btn miskey-tab" id="tier-tab-btn-2" onclick="switchTierAuditSubTab('conflicts')">🚨 รายการขัดแย้งเชิงตรรกะ (<span id="tier-modal-conflict-count">0</span>)</button>
+                </div>
+                <div id="tier-subtab-grid" class="tier-grid"></div>
+                <div id="tier-subtab-conflicts" class="hidden" style="max-height:450px; overflow-y:auto; border:1px solid var(--border); border-radius:6px;">
+                    <table class="dict-table">
+                        <thead>
+                            <tr>
+                                <th>ข้อความระดับการศึกษา</th>
+                                <th>วุฒิการศึกษา</th>
+                                <th>สาขาวิชาเอก</th>
+                                <th>สาเหตุ</th>
+                                <th style="width:110px; text-align:center;">จัดการ</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tier-conflict-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TIER ADD KEYWORD MODAL -->
+    <div id="tier-add-modal" class="modal-ov hidden" style="z-index:2300;">
+        <div class="modal-box" style="max-width:480px;">
+            <div class="modal-hd">
+                <span id="tier-add-modal-title">➕ เพิ่มคำดักจับระดับการศึกษา</span>
+                <button class="btn-sm danger" onclick="closeAddTierModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="tier-add-target-id">
+                <div>
+                    <label class="fld-label">ข้อความระดับการศึกษาตามไฟล์ Excel:</label>
+                    <input type="text" id="tier-add-keyword-input" class="search-inp" placeholder="เช่น ประกาศนียบัตรวิชาชีพชั้นสูง, ป.บัณฑิต">
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:8px;">
+                    <button class="btn-sm" onclick="closeAddTierModal()">ยกเลิก</button>
+                    <button class="btn-sm primary" onclick="saveAddTierKeyword()">💾 เพิ่มคำดักจับ</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TIER REMAPPING MODAL -->
+    <div id="tier-remap-modal" class="modal-ov hidden" style="z-index:2200;">
+        <div class="modal-box" style="max-width:480px;">
+            <div class="modal-hd">
+                <span>🔄 ปรับปรุงการจัดระดับการศึกษา</span>
+                <button class="btn-sm danger" onclick="closeTierRemapModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div style="font-size:12px; color:#64748b;">
+                    ข้อความดิบ: <strong id="tier-remap-raw-text" style="color:var(--accent);"></strong>
+                </div>
+                <div>
+                    <label class="fld-label">เลือกระดับการศึกษามาตรฐานที่ถูกต้อง:</label>
+                    <select id="tier-remap-target-select" class="fld-input"></select>
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:8px;">
+                    <button class="btn-sm" onclick="closeTierRemapModal()">ยกเลิก</button>
+                    <button class="btn-sm primary" onclick="saveTierRemapModal()">💾 บันทึกการแปลงระดับ</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- DICTIONARY MANAGER MODAL -->
+    <div id="dict-modal" class="modal-ov hidden">
+        <div class="modal-box">
+            <div class="modal-hd">
+                <span>📖 จัดการพจนานุกรมคำค้นประจำกลุ่มสายงาน</span>
+                <button class="btn-sm danger" onclick="closeDictionaryModal()">✕ ปิด</button>
+            </div>
+            <div class="modal-body">
+                <div style="background:#f8fafc; border:1px solid var(--border); padding:10px; border-radius:6px; display:flex; gap:8px; align-items:center;">
+                    <span style="font-weight:bold; font-size:12px;">🧪 ทดสอบการจำแนก:</span>
+                    <input type="text" id="dict-test-input" placeholder="พิมพ์ชื่อสาขา หรือวุฒิ เพื่อทดสอบระบบ..." class="search-inp" style="margin-bottom:0; flex:1;" oninput="testV80EngineMatch(this.value)">
+                    <span id="dict-test-result" style="font-weight:bold; color:var(--accent); font-size:12px;">ผลลัพธ์: -</span>
+                </div>
+                <div style="max-height:450px; overflow-y:auto; border:1px solid var(--border); border-radius:6px; margin-top:8px;">
+                    <table class="dict-table">
+                        <thead>
+                            <tr>
+                                <th style="width:200px;">กลุ่มสายงาน</th>
+                                <th>คำค้นทั้งหมดในกลุ่ม (สาขาตรง + คำผสม + วุฒิเฉพาะ + คำทั่วไป)</th>
+                                <th style="width:130px; text-align:center;">จัดการ</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dict-table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ADD/EDIT DICT RULE MODAL -->
+    <div id="dict-rule-modal" class="modal-ov hidden" style="z-index:2100;">
+        <div class="modal-box" style="max-width:550px;">
+            <div class="modal-hd" id="dict-rule-modal-title">✏️ จัดการคำค้นประจำกลุ่ม</div>
+            <div class="modal-body">
+                <input type="hidden" id="modal-dict-rule-id">
+                <div style="font-size:12px; color:#64748b; line-height:1.5;">
+                    💡 พิมพ์คำค้นที่ต้องการดักจับเข้ากลุ่มนี้ คั่นด้วยเครื่องหมายจุลภาค (<code>,</code>)
+                </div>
+                <div>
+                    <label class="fld-label">คำค้นทั้งหมด (คั่นด้วยจุลภาค):</label>
+                    <textarea id="modal-dict-aliases" class="fld-input" rows="5" placeholder="เช่น การบัญชี, การสอบบัญชี, บัญชี, Auditing"></textarea>
+                </div>
+                <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:8px;">
+                    <button class="btn-sm" onclick="closeAddDictRule()">ยกเลิก</button>
+                    <button class="btn-sm primary" onclick="saveDictRuleModal()">💾 บันทึกและปรับปรุงทันที</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ADD/EDIT GROUP MODAL -->
+    <div id="group-modal" class="modal-ov hidden">
+        <div class="modal-box" style="max-width:600px;">
+            <div class="modal-hd" id="group-modal-title">➕ เพิ่มกลุ่มสายงานวิชาชีพ</div>
+            <div class="modal-body">
+                <input type="hidden" id="modal-grp-key">
+                <div>
+                    <label class="fld-label">ชื่อกลุ่มสายงาน:</label>
+                    <input type="text" id="modal-grp-name" class="search-inp" placeholder="เช่น 🔬 สายงานวิทยาศาสตร์...">
+                </div>
+                <div>
+                    <label class="fld-label">สีประจำกลุ่ม:</label>
+                    <input type="color" id="modal-grp-color" value="#2563eb" style="width:100%;height:36px;border:1px solid var(--border);border-radius:6px;padding:2px;background:#fff;cursor:pointer;">
+                </div>
+                <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">
+                    <button class="btn-sm" onclick="closeGroupModal()">ยกเลิก</button>
+                    <button class="btn-sm primary" onclick="saveGroupModal()">💾 บันทึก</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- REVIEW MODAL -->
+    <div id="review-modal" class="modal-ov hidden">
+        <div class="modal-box" style="max-width:600px;">
+            <div class="modal-hd">🔍 ตรวจสอบรายการเปลี่ยนแปลงก่อนบันทึก</div>
+            <div class="modal-body">
+                <div id="review-list" style="max-height:400px;overflow-y:auto;font-size:12px;border:1px solid var(--border);border-radius:6px;background:#fff;"></div>
+                <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
+                    <button class="btn-sm" onclick="closeReviewModal()">✏️ กลับไปแก้ไข</button>
+                    <button class="btn-sm success" onclick="saveToServer()">✅ ยืนยันบันทึกข้อมูลขึ้นระบบ</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        (function() {
+            const token = localStorage.getItem("SBT_TOKEN");
+            const role = localStorage.getItem("SBT_ROLE");
+            if (!token || role !== "admin") window.location.href = "/";
+        })();
+
+        const API_BASE = "";
+        let authToken = localStorage.getItem("SBT_TOKEN") || "";
+        let userRole = localStorage.getItem("SBT_ROLE") || "";
+
+        let dbVersion = 80;
+        let originalState = {};
+        
+        let v78MasterData = {
+            version: 80,
+            groups: [],
+            specificQualifications: [],
+            policyOverrides: [],
+            degreeMajorCombinations: [],
+            compoundMajorRules: [],
+            exactMajorRules: [],
+            exactDegreeRules: [],
+            genericKeywords: [],
+            exclusions: {},
+            personOverrides: {},
+            tierOverrides: {},
+            tierDefaults: [1, 2, 3, 4, 5, 6],
+            rules: []
+        };
+        
+        let branchDataMap = new Map();
+        let scannedRawLevelsMap = new Map();
+        let selectedBranch = null;
+        let activeGroupFilter = 'all';
+        let activeTab = 'all';
+        let selectedCheckboxes = new Set();
+        let undoStack = [];
+        let innerPersonFilterText = "";
+        let activePersonGroupFilter = "";
+
+        const normCache = new Map();
+        const classCache = new Map();
+        let branchStatusCache = new Map();
+
+        function clearBranchCache() {
+            classCache.clear();
+            branchStatusCache.clear();
+        }
+
+        const STANDARD_TIERS_DEF = [
+            { id: 1, name: "ปริญญาเอกหรือเทียบเท่า", defaultChecked: true, regex: /ปริญญาเอก|ป\.เอก|ดุษฎี|doctor|ph\.?d|dba/i },
+            { id: 2, name: "ปริญญาโทหรือเทียบเท่า", defaultChecked: true, regex: /ปริญญาโท|ป\.โท|มหาบัณฑิต|master|mba|ll\.?m|mpa|m\.?sc|m\.?a\b/i },
+            { id: 3, name: "ประกาศนียบัตรชั้นสูง (สูงกว่าปริญญาตรี/ต่ำกว่าปริญญาโท)", defaultChecked: true, regex: /^(?=.*(?:ประกาศนียบัตรบัณฑิต|ป\.บัณฑิต|สูงกว่าปริญญาตรี|postgraduate|ปรม|วิชาชีพครู))(?!.*(?:ปวช|ปวส|ประกาศนียบัตรวิชาชีพ))/i },
+            { id: 4, name: "ปริญญาตรีหรือเทียบเท่า", defaultChecked: true, regex: /ปริญญาตรี|ป\.ตรี|บัณฑิต|bachelor|b\.?a\b|b\.?s\b|b\.?b\.?a|ll\.?b|ปทส/i },
+            { id: 5, name: "วุฒิอื่น ๆ เป็นกลุ่มที่หน่วยงานผลิตมาเพื่อใช้เฉพาะตำแหน่ง", defaultChecked: true, regex: /เนติ|ว่าความ|ทนาย|ก\.ศป|กศป|ศาลปกครอง|วุฒิบัตร|ใบอนุญาต|เฉพาะตำแหน่ง|วุฒิอื่น/i },
+            { id: 6, name: "ทักษะประสบการณ์ที่ใช้แทนวุฒิการศึกษา", defaultChecked: true, regex: /ทักษะ|ประสบการณ์|แทนวุฒิ/i },
+            { id: 7, name: "ปวส. หรือเทียบเท่า / อนุปริญญา / ปวท.", defaultChecked: false, regex: /ปวส|ปวท|อนุปริญญา|วิชาชีพชั้นสูง|วิชาชีพเทคนิค/i },
+            { id: 8, name: "ปวช. หรือเทียบเท่า", defaultChecked: false, regex: /(?<!ต่ำกว่า\s*)ปวช|(?<!ต่ำกว่า\s*)ประกาศนียบัตรวิชาชีพ(?!ชั้นสูง)/i },
+            { id: 9, name: "มัธยมศึกษา (รวม ม.ต้น, ม.ปลาย, สอบเทียบ)", defaultChecked: false, regex: /มัธยม|ม\.[1-6]|ม\.ศ\.|มศ\.|ต่ำกว่าประกาศนียบัตรวิชาชีพ|ต่ำกว่า\s*ปวช/i },
+            { id: 10, name: "ประถมศึกษา (รวม ป.1-6, ป.3, ป.4, ใบสุทธิ)", defaultChecked: false, regex: /ประถม|ป\.[1-7]|ใบสุทธิ|อนุบาล/i }
+        ];
+
+        const PROFESSIONAL_GROUPS = new Set(["acc", "law", "eco", "comp", "stat", "eng", "health"]);
+
+        const TIERS = {
+            PERSON: 10000,
+            BASIC: 9500,
+            SPECIFIC: 9000,
+            EXACT_FULL_MAJOR: 8500,
+            POLICY: 8000,
+            COMBO: 7000,
+            PROFESSIONAL_MAJOR: 6500,
+            EXACT_DEGREE: 6000,
+            EXACT_MAJOR: 5000,
+            COMPOUND: 4000,
+            GENERIC: 3000
+        };
+function classifyQualificationV80(qualificationText, majorText) {
+    // 🛡️ 1. เช็ก "กฎรายคน" ก่อน (เผื่อมีเคสพิเศษที่ล็อกไว้)
+    if (typeof personOverrides !== 'undefined' && currentPersonKey && personOverrides[currentPersonKey]) {
+        return personOverrides[currentPersonKey];
+    }
+
+    // 🛡️ 2. ให้ "exactMajorRules" (ที่มึงกดปุ่มน้ำเงินบันทึกสาชาหลัก) มีอำนาจสูงสุดเป็นอันดับ 2 ทันที!
+    if (majorText && v78MasterData && v78MasterData.exactMajorRules) {
+        const cleanMajor = normalizeField(majorText);
+        const foundExact = v78MasterData.exactMajorRules.find(r => normalizeField(r.pattern) === cleanMajor);
+        if (foundExact) {
+            return foundExact.group;
+        }
+    }
+
+    // 3. กฎเกณฑ์พจนานุกรมและเงื่อนไขอื่นๆ ต่อจากนี้...
+    // (ปล่อยโค้ดเดิมของพวก exactDegreeRules หรือ compoundMajorRules ไว้ข้างล่างตามเดิม)
+}
+        function escapeHTML(value) {
+            return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+        }
+
+        function normalizeField(text) {
+            if (!text) return "";
+            if (normCache.has(text)) return normCache.get(text);
+
+            let s = String(text).normalize("NFC").toLowerCase().trim().replace(/\s+/g, " ");
+            s = s.replace(/\s*\(เกียรตินิยมอันดับ\s*(หนึ่ง|สอง|1|2)\)\s*/g, " ");
+            s = s.replace(/\s*\(เกียรตินิยม\)\s*/g, " ");
+            s = s.replace(/^(กลุ่มนิติศาสตร์|กลุ่มบริหารธุรกิจ|กลุ่มเศรษฐศาสตร์|กลุ่มรัฐศาสตร์|กลุ่มการบัญชี|กลุ่มวิทยาศาสตร์|กลุ่มพาณิชยศาสตร์|กลุ่ม)(ไม่ระบุวิชาเอก|ไม่ระบุสาขาวิชาเอก)?\s*/g, "");
+            s = s.replace(/^(สาขาวิชาเอก|สาขาวิชา|สาขา|วิชาเอก|แผนกวิชา|แผนก)\s*/g, "");
+            
+            if (/ไม่ระบุ|อื่นๆ|อื่น ๆ/i.test(s) && /วิชาเอก|สาขา/i.test(s)) s = "";
+            
+            const emptyValues = new Set(["", "-", "ไม่ระบุ", "ไม่ระบุวิชาเอก", "อื่นๆ", "อื่น ๆ", "อื่นๆ ไม่ระบุวิชาเอก", "ไม่ระบุสาขาวิชาเอก", "บริหารไม่ระบุวิชาเอก", "บริหารธุรกิจไม่ระบุวิชาเอก"]);
+            const result = emptyValues.has(s) ? "" : s.trim();
+            normCache.set(text, result);
+            return result;
+        }
+
+        function prepareRulesIndex(src) {
+            if (!src) return;
+            (src.specificQualifications || []).forEach(spec => {
+                spec._tokensNorm = [spec.token, ...(spec.aliases || [])].filter(Boolean).map(t => normalizeField(t));
+            });
+            (src.policyOverrides || []).forEach(pol => { pol._norm = normalizeField(pol.pattern); });
+            (src.degreeMajorCombinations || []).forEach(combo => {
+                combo._dNorm = normalizeField(combo.degreeToken);
+                combo._mNorm = normalizeField(combo.majorToken);
+            });
+            (src.compoundMajorRules || []).forEach(comp => { comp._norm = normalizeField(comp.pattern); });
+            (src.exactMajorRules || []).forEach(em => { em._norm = normalizeField(em.pattern); });
+            (src.exactDegreeRules || []).forEach(ed => { ed._norm = normalizeField(ed.pattern); });
+            (src.genericKeywords || []).forEach(gen => { gen._norm = normalizeField(gen.keyword); });
+
+            src._exclusionsNorm = {};
+            if (src.exclusions) {
+                Object.entries(src.exclusions).forEach(([grp, arr]) => {
+                    src._exclusionsNorm[grp] = (arr || []).map(x => normalizeField(x));
+                });
+            }
+            clearBranchCache();
+        }
+
+        function classifyEducationTier(lvl, rawDegree = "") {
+            const cleanLvl = (lvl || "").trim();
+            const cleanDeg = (rawDegree || "").trim();
+            if (!cleanLvl && !cleanDeg) return STANDARD_TIERS_DEF.find(t => t.id === 10);
+
+            if (v78MasterData.tierOverrides && v78MasterData.tierOverrides[cleanLvl]) {
+                const target = STANDARD_TIERS_DEF.find(t => t.id === v78MasterData.tierOverrides[cleanLvl]);
+                if (target) return target;
+            }
+
+            const fullText = `${cleanLvl} ${cleanDeg}`.trim();
+            const evaluationPriority = [3, 1, 2, 5, 6, 4, 10, 9, 8, 7];
+
+            for (const tierId of evaluationPriority) {
+                const tier = STANDARD_TIERS_DEF.find(t => t.id === tierId);
+                if (tier && tier.regex.test(fullText)) return tier;
+            }
+            return STANDARD_TIERS_DEF.find(t => t.id === 10);
+        }
+
+        function getTierScore(tierId) {
+            if (tierId === 1) return 4.0;
+            if (tierId === 2) return 3.0;
+            if (tierId === 3) return 2.5;
+            if (tierId === 4) return 2.0;
+            if (tierId === 5) return 2.0;
+            if (tierId === 6) return 1.5;
+            if (tierId === 7) return 1.5;
+            if (tierId === 8) return 1.2;
+            if (tierId >= 9) return 1.0;
+            return 0;
+        }
+
+        function evaluateTierSafe(lvl, rawDegree, rawMajor) {
+            const assignedTier = classifyEducationTier(lvl, rawDegree);
+            const score = getTierScore(assignedTier.id);
+            const lvlText = (lvl || '').toLowerCase().trim();
+            const degText = (rawDegree || '').toLowerCase().trim();
+
+            if (/บัณฑิต|มหาบัณฑิต|ดุษฎีบัณฑิต|doctor|bachelor|master/i.test(lvlText) && 
+                !/ระดับ|หรือเทียบเท่า/i.test(lvlText) && degText) {
+                return { tier: score, tierId: assignedTier.id, isConflict: true, reason: `ตรวจพบชื่อปริญญาในช่องระดับการศึกษา (${lvl})` };
+            }
+            return { tier: score, tierId: assignedTier.id, isConflict: false, reason: null };
+        }
+
+        function isGroupExcluded(text, groupKey) {
+            const exList = v78MasterData._exclusionsNorm?.[groupKey] || v78MasterData.exclusions?.[groupKey];
+            if (!exList || exList.length === 0) return false;
+            for (let i = 0; i < exList.length; i++) {
+                if (text.includes(exList[i])) return true;
+            }
+            return false;
+        }
+
+    function classifyQualificationV80(lvl, rawDegree, rawMajor, personKey, rowContext) {
+            const dataSrc = v78MasterData || {};
+
+            if (v78MasterData.personApproved && v78MasterData.personApproved[personKey]) {
+                return { group: "approved", status: "APPROVED", reason: "MANUAL_APPROVE", specificity: 99999 };
+            }
+
+            if (personKey && dataSrc.personOverrides && dataSrc.personOverrides[personKey]) {
+                return { group: dataSrc.personOverrides[personKey], status: "OVERRIDE", reason: "PERSON_OVERRIDE", specificity: TIERS.PERSON, matchedRule: personKey, confidence: 1.0 };
+            }
+
+            // 🛡️ เช็กทั้งช่องสาขา (rawMajor) และช่องวุฒิ (rawDegree) พร้อมกัน ป้องกันข้อมูลสลับช่องหรือสะกดเหลื่อมกัน
+            const cleanMajorCheck = normalizeField(rawMajor);
+            const cleanDegreeCheck = normalizeField(rawDegree);
+            
+            if (dataSrc.exactMajorRules) {
+                const foundExact = dataSrc.exactMajorRules.find(r => {
+                    const pNorm = normalizeField(r.pattern);
+                    return (cleanMajorCheck && pNorm === cleanMajorCheck) || (cleanDegreeCheck && pNorm === cleanDegreeCheck);
+                });
+                if (foundExact) {
+                    return { group: foundExact.group, status: "AUTO", reason: "EXACT_MAJOR", matchedRule: foundExact.pattern, sourceField: "major/degree", confidence: 1.0, specificity: 9999 };
+                }
+            }
+
+            const tier = classifyEducationTier(lvl, rawDegree);
+            const activeDefaults = new Set(v78MasterData.tierDefaults || [1, 2, 3, 4, 5, 6]);
+            if (!activeDefaults.has(tier.id)) {
+                return { group: "none", status: "BASIC_EDU", reason: "BELOW_BACHELOR_EXCLUDE" };
+            }
+
+            const memoKey = `${lvl}|${rawDegree}|${rawMajor}`;
+            if (classCache.has(memoKey)) return classCache.get(memoKey);
+
+            const cleanD = normalizeField(rawDegree);
+            const cleanM = normalizeField(rawMajor);
+            const fullText = `${cleanD} ${cleanM}`.trim();
+            const candidates = [];
+
+            const specs = dataSrc.specificQualifications || [];
+            for (let i = 0; i < specs.length; i++) {
+                const spec = specs[i];
+                const tokens = spec._tokensNorm || [normalizeField(spec.token)];
+                for (let j = 0; j < tokens.length; j++) {
+                    if (tokens[j] && fullText.includes(tokens[j])) {
+                        candidates.push({ group: spec.group, tier: TIERS.SPECIFIC, patternLength: tokens[j].length, matchedRule: spec.token, reason: "SPECIFIC", sourceField: "degree+major", confidence: 0.99, specificity: tokens[j].length });
+                        break;
+                    }
+                }
+            }
+
+            const policies = dataSrc.policyOverrides || [];
+            for (let i = 0; i < policies.length; i++) {
+                const pol = policies[i];
+                const pNorm = pol._norm !== undefined ? pol._norm : normalizeField(pol.pattern);
+                if (pNorm && fullText.includes(pNorm)) {
+                    candidates.push({ group: pol.group, tier: TIERS.POLICY, patternLength: pNorm.length, matchedRule: pol.pattern, reason: pol.reason || "POLICY", sourceField: "degree+major", confidence: 0.98, specificity: pNorm.length });
+                }
+            }
+
+            const combos = dataSrc.degreeMajorCombinations || [];
+            for (let i = 0; i < combos.length; i++) {
+                const combo = combos[i];
+                const dNorm = combo._dNorm !== undefined ? combo._dNorm : normalizeField(combo.degreeToken);
+                const mNorm = combo._mNorm !== undefined ? combo._mNorm : normalizeField(combo.majorToken);
+                if (dNorm && mNorm && cleanD.includes(dNorm) && cleanM.includes(mNorm)) {
+                    candidates.push({ group: combo.group, tier: TIERS.COMBO, patternLength: dNorm.length + mNorm.length, matchedRule: `${combo.degreeToken} + ${combo.majorToken}`, reason: combo.reason || "COMBO", sourceField: "degree+major", confidence: 0.99, specificity: dNorm.length + mNorm.length });
+                }
+            }
+
+            if (cleanM) {
+                const compounds = dataSrc.compoundMajorRules || [];
+                for (let i = 0; i < compounds.length; i++) {
+                    const comp = compounds[i];
+                    const pNorm = comp._norm !== undefined ? comp._norm : normalizeField(comp.pattern);
+                    if (pNorm && cleanM.includes(pNorm) && !isGroupExcluded(cleanM, comp.group)) {
+                        const isProf = PROFESSIONAL_GROUPS.has(comp.group);
+                        candidates.push({ group: comp.group, tier: isProf ? TIERS.PROFESSIONAL_MAJOR : TIERS.COMPOUND, patternLength: pNorm.length, matchedRule: comp.pattern, reason: "COMPOUND_MAJOR", sourceField: "major", confidence: 0.96, specificity: (Number(comp.specificity) || pNorm.length) + (isProf ? 500 : 0) });
+                    }
+                }
+            }
+
+            if (cleanM) {
+                const exactMajors = dataSrc.exactMajorRules || [];
+                for (let i = 0; i < exactMajors.length; i++) {
+                    const em = exactMajors[i];
+                    const pNorm = em._norm !== undefined ? em._norm : normalizeField(em.pattern);
+                    if (pNorm && cleanM.includes(pNorm) && !isGroupExcluded(cleanM, em.group)) {
+                        const isFullMatch = (cleanM === pNorm);
+                        const isProf = PROFESSIONAL_GROUPS.has(em.group);
+                        candidates.push({
+                            group: em.group,
+                            tier: isFullMatch ? TIERS.EXACT_FULL_MAJOR : (isProf ? TIERS.PROFESSIONAL_MAJOR : TIERS.EXACT_MAJOR),
+                            patternLength: pNorm.length,
+                            matchedRule: em.pattern,
+                            reason: isFullMatch ? "EXACT_FULL_MAJOR" : "EXACT_MAJOR",
+                            sourceField: "major",
+                            confidence: isFullMatch ? 0.99 : (isProf ? 0.94 : 0.90),
+                            specificity: pNorm.length + (isFullMatch ? 1000 : 0)
+                        });
+                    }
+                }
+            }
+
+            if (cleanD) {
+                const exactDegrees = dataSrc.exactDegreeRules || [];
+                for (let i = 0; i < exactDegrees.length; i++) {
+                    const ed = exactDegrees[i];
+                    const pNorm = ed._norm !== undefined ? ed._norm : normalizeField(ed.pattern);
+                    if (pNorm && cleanD.includes(pNorm) && !isGroupExcluded(cleanD, ed.group)) {
+                        candidates.push({ group: ed.group, tier: TIERS.EXACT_DEGREE, patternLength: pNorm.length, matchedRule: ed.pattern, reason: "EXACT_DEGREE", sourceField: "degree", confidence: 0.90, specificity: pNorm.length });
+                    }
+                }
+            }
+
+            const generics = dataSrc.genericKeywords || [];
+            for (let i = 0; i < generics.length; i++) {
+                const gen = generics[i];
+                const kNorm = gen._norm !== undefined ? gen._norm : normalizeField(gen.keyword);
+                if (!kNorm) continue;
+                const matched = (cleanM && cleanM.includes(kNorm)) || (!cleanM && cleanD && cleanD.includes(kNorm));
+                if (matched && !isGroupExcluded(cleanM || cleanD, gen.group)) {
+                    candidates.push({ group: gen.group, tier: TIERS.GENERIC, patternLength: kNorm.length, matchedRule: gen.keyword, reason: "GENERIC", sourceField: cleanM ? "major" : "degree", confidence: 0.70, specificity: kNorm.length });
+                }
+            }
+
+            if (candidates.length === 0) {
+                const res = { group: "other", status: "UNKNOWN", reason: "UNRESOLVED", matchedRule: cleanM || cleanD || "N/A", specificity: 0, confidence: 0.3 };
+                classCache.set(memoKey, res);
+                return res;
+            }
+
+            candidates.sort((a, b) => {
+                if (b.tier !== a.tier) return b.tier - a.tier;
+                if (b.patternLength !== a.patternLength) return b.patternLength - a.patternLength;
+                if (b.specificity !== a.specificity) return b.specificity - a.specificity;
+                return b.confidence - a.confidence;
+            });
+
+            const best = candidates[0];
+            const sameLevel = candidates.filter(c => c.tier === best.tier && c.specificity === best.specificity && c.patternLength === best.patternLength);
+            const competingGroups = [...new Set(sameLevel.map(c => c.group).filter(Boolean))];
+
+            if (competingGroups.length > 1) {
+                const res = { group: "review", status: "REVIEW", reason: "CONFLICT", matchedRule: sameLevel.map(c => c.matchedRule).join(" vs "), sourceField: best.sourceField, confidence: 0.4, specificity: best.tier + best.specificity };
+                classCache.set(memoKey, res);
+                return res;
+            }
+
+            const res = { group: best.group, status: "AUTO", reason: best.reason, matchedRule: best.matchedRule, sourceField: best.sourceField, confidence: best.confidence, specificity: best.tier + best.specificity };
+            classCache.set(memoKey, res);
+            return res;
+        }
+
+        function getBranchResolutionStatus(b) {
+            if (!b) return { isResolved: false, isSplit: false, total: 0, pending: 0, resolved: 0, groupCounts: {}, distinctGroups: 0, hasOverride: false, isReview: false };
+            if (branchStatusCache.has(b)) return branchStatusCache.get(b);
+
+            const rec = branchDataMap.get(b);
+            if (!rec) return { isResolved: false, isSplit: false, total: 0, pending: 0, resolved: 0, groupCounts: {}, distinctGroups: 0, hasOverride: false, isReview: false };
+
+            const people = [...rec.normalItems, ...rec.miskeyItems];
+            const totalPeople = people.length;
+            if (totalPeople === 0) return { isResolved: true, isSplit: false, total: 0, pending: 0, resolved: 0, groupCounts: {}, distinctGroups: 0, hasOverride: false, isReview: false };
+
+            let resolvedCount = 0, pendingCount = 0, hasAnyOverride = false, hasReview = false;
+            const groupCounts = {};
+            const validGroupKeys = new Set((v78MasterData.groups || []).map(g => g.key));
+
+            for (let i = 0; i < totalPeople; i++) {
+                const p = people[i];
+                const res = classifyQualificationV80(p.level, p.degree, p.major, p.id, p);
+                if (res.status === "OVERRIDE") hasAnyOverride = true;
+                if (res.status === "REVIEW") hasReview = true;
+
+                if (validGroupKeys.has(res.group) && (res.status === "AUTO" || res.status === "OVERRIDE")) {
+                    resolvedCount++;
+                    groupCounts[res.group] = (groupCounts[res.group] || 0) + 1;
+                } else {
+                    pendingCount++;
+                }
+            }
+
+            const distinctGroups = Object.keys(groupCounts).length;
+            const resObj = {
+                isResolved: pendingCount === 0 && resolvedCount > 0,
+                isSplit: distinctGroups > 1,
+                distinctGroups: distinctGroups,
+                total: totalPeople,
+                pending: pendingCount,
+                resolved: resolvedCount,
+                groupCounts: groupCounts,
+                hasOverride: hasAnyOverride,
+                isReview: hasReview || rec.isMiskey
+            };
+
+            branchStatusCache.set(b, resObj);
+            return resObj;
+        }
+
+        function isBranchFullyResolved(b) {
+            return getBranchResolutionStatus(b).isResolved;
+        }
+
+        function findColIndex(headers, ...candidates) {
+            for (let cand of candidates) {
+                const target = cand.replace(/\s+/g, '').toLowerCase();
+                const idx = headers.findIndex(h => (h || '').toString().replace(/\s+/g, '').toLowerCase() === target);
+                if (idx !== -1) return idx;
+            }
+            return -1;
+        }
+
+        function debounce(func, wait = 120) {
+            let timeout;
+            return function(...args) {
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(this, args), wait);
+            };
+        }
+
+        const onSearchQueueInput = debounce(() => renderQueue(), 100);
+        const onSearchGroupInput = debounce(() => renderGroups(), 100);
+
+        async function init() {
+            document.getElementById("security-block").style.display = "none";
+            document.getElementById("app-root").classList.add("visible");
+            initSplitters();
+            await loadRules();
+            await scanExcel();
+            renderGroups();
+            renderQueue();
+            updateKPI();
+            populateBulkDropdown();
+        }
+
+        async function handleLogout() {
+            if (authToken) {
+                try { await fetch(`${API_BASE}/api/logout`, { method: "POST", headers: { "Authorization": `Bearer ${authToken}` } }); } catch (e) {}
+            }
+            localStorage.clear();
+            window.location.href = "/";
+        }
+
+        async function loadRules() {
+            try {
+                const res = await fetch(`${API_BASE}/api/getRules`, { headers: { "Authorization": `Bearer ${authToken}` } });
+                if (res.ok) {
+                    const data = await res.json();
+                    dbVersion = data.version || 80;
+                    v78MasterData = { ...v78MasterData, ...data };
+                    if (!v78MasterData.tierDefaults) v78MasterData.tierDefaults = [1, 2, 3, 4, 5, 6];
+                    prepareRulesIndex(v78MasterData);
+                    originalState = structuredClone(v78MasterData);
+                } else if (res.status === 401) { handleLogout(); }
+            } catch (e) { console.error("Rules load error:", e); }
+        }
+
+        async function scanExcel() {
+            try {
+                const res = await fetch(`${API_BASE}/api/fetchExcel`, { method: "POST", headers: { "Authorization": `Bearer ${authToken}` } });
+                if (!res.ok) return;
+                const buffer = await res.arrayBuffer();
+                const wb = XLSX.read(buffer, { type: 'array' });
+                const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: "" });
+                const head = rows[1].map(h => (h || '').toString().trim());
+
+                const nameIdx = findColIndex(head, "ชื่อ-นามสกุล", "ชื่อ - นามสกุล", "ชื่อสกุล");
+                const posIdx = findColIndex(head, "เลขที่ตำแหน่ง", "เลขตำแหน่ง");
+                const deptIdx = findColIndex(head, "สำนัก/กอง", "สำนักกอง", "หน่วยงาน");
+                const levelIdx = findColIndex(head, "ระดับการศึกษา", "ระดับการศึกษา-ชื่อเต็ม");
+                const degreeIdx = findColIndex(head, "วุฒิการศึกษา");
+                const majorIdx = findColIndex(head, "สาขาวิชาเอก", "สาขา");
+
+                branchDataMap.clear();
+                scannedRawLevelsMap.clear();
+                clearBranchCache();
+
+                const activeTierDefaults = new Set(v78MasterData.tierDefaults || [1, 2, 3, 4, 5, 6]);
+
+                for (let i = 2; i < rows.length; i++) {
+                    const r = rows[i]; if (!r || r.length === 0) continue;
+                    const name = nameIdx !== -1 ? (r[nameIdx] || '').toString().trim() : "ข้าราชการ";
+                    const pos = posIdx !== -1 ? (r[posIdx] || '').toString().trim() : "-";
+                    const dept = deptIdx !== -1 ? (r[deptIdx] || '').toString().trim() : "-";
+                    const lvl = levelIdx !== -1 ? (r[levelIdx] || '').toString().trim() : "";
+                    const deg = degreeIdx !== -1 ? (r[degreeIdx] || '').toString().trim() : "";
+                    const maj = majorIdx !== -1 ? (r[majorIdx] || '').toString().trim() : "";
+
+                    if (lvl || deg) {
+                        const rawLvlKey = lvl || "(ว่าง)";
+                        if (!scannedRawLevelsMap.has(rawLvlKey)) scannedRawLevelsMap.set(rawLvlKey, []);
+                        const tierEvalAudit = evaluateTierSafe(lvl, deg, maj);
+                        scannedRawLevelsMap.get(rawLvlKey).push({ degree: deg, major: maj, isConflict: tierEvalAudit.isConflict, reason: tierEvalAudit.reason });
+                    }
+
+                    const cleanM = normalizeField(maj), cleanD = normalizeField(deg);
+                    const branch = cleanM || cleanD;
+                    if (!branch) continue;
+
+                    const tierEval = evaluateTierSafe(lvl, deg, maj);
+                    const assignedTier = classifyEducationTier(lvl, deg);
+                    const pClass = classifyQualificationV80(lvl, deg, maj, null, null);
+                    
+                    if (!activeTierDefaults.has(assignedTier.id) && pClass.group !== 'spec' && !tierEval.isConflict && pClass.status !== 'REVIEW') continue;
+
+                    if (!branchDataMap.has(branch)) branchDataMap.set(branch, { isMiskey: false, miskeyItems: [], normalItems: [] });
+                    
+                    const rec = branchDataMap.get(branch);
+                    const personId = `${pos || '-'}_${name || 'ข้าราชการ'}_${lvl}_${deg}_${maj}`;
+                    const personObj = { id: personId, name, pos, dept, level: lvl, degree: deg, major: maj, miskeyReason: tierEval.reason || pClass.matchedRule };
+
+                    if (tierEval.isConflict || pClass.status === "REVIEW") { 
+                        rec.isMiskey = true; 
+                        rec.miskeyItems.push(personObj); 
+                    } else { 
+                        rec.normalItems.push(personObj); 
+                    }
+                }
+            } catch (e) { console.error("Excel Scan Error:", e); }
+        }
+
+        let dragSourceKey = null;
+
+        function handleDragStart(e, key) {
+            dragSourceKey = key;
+            e.currentTarget.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', key);
+        }
+
+        function handleDragOver(e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            const targetEl = e.currentTarget.closest('.group-item');
+            if (targetEl && !targetEl.classList.contains('dragging')) {
+                targetEl.classList.add('drag-over');
+            }
+        }
+
+        function handleDragLeave(e) {
+            const targetEl = e.currentTarget.closest('.group-item');
+            if (targetEl) targetEl.classList.remove('drag-over');
+        }
+
+        function handleDrop(e, targetKey) {
+            e.preventDefault();
+            e.stopPropagation();
+            const targetEl = e.currentTarget.closest('.group-item');
+            if (targetEl) targetEl.classList.remove('drag-over');
+
+            if (!dragSourceKey || dragSourceKey === targetKey) return;
+
+            pushSnapshot();
+            const grps = v78MasterData.groups || [];
+            const srcIdx = grps.findIndex(g => g.key === dragSourceKey);
+            const tgtIdx = grps.findIndex(g => g.key === targetKey);
+
+            if (srcIdx !== -1 && tgtIdx !== -1) {
+                const [movedGroup] = grps.splice(srcIdx, 1);
+                grps.splice(tgtIdx, 0, movedGroup);
+                v78MasterData.groups = grps;
+                renderGroups();
+                populateBulkDropdown();
+            }
+            dragSourceKey = null;
+        }
+
+        function handleDragEnd(e) {
+            e.currentTarget.classList.remove('dragging');
+            document.querySelectorAll('.group-item').forEach(el => el.classList.remove('drag-over'));
+            dragSourceKey = null;
+        }
+
+        function renderGroups() {
+            const container = document.getElementById('groups-list');
+            const kw = document.getElementById('grp-search').value.trim().toLowerCase();
+            const unclassCount = Array.from(branchDataMap.keys()).filter(b => !isBranchFullyResolved(b)).length;
+
+            let html = `<div class="group-item ${activeGroupFilter === 'all' ? 'active' : ''}" onclick="setGroupFilter('all')"><span>🌐 แสดงทั้งหมด</span></div>`;
+            html += `<div class="group-item ${activeGroupFilter === 'unclass' ? 'active' : ''}" onclick="setGroupFilter('unclass')"><span>📌 สาขาตกค้างใน Inbox</span><span class="group-badge" style="background:#d97706;color:#fff;">${unclassCount}</span></div>`;
+
+            const filteredGroups = (v78MasterData.groups || []).filter(g => g.name.toLowerCase().includes(kw));
+
+            for (let i = 0; i < filteredGroups.length; i++) {
+                const g = filteredGroups[i];
+                let cnt = 0;
+                branchDataMap.forEach((_, b) => {
+                    const status = getBranchResolutionStatus(b);
+                    if (status.groupCounts[g.key] > 0) cnt++;
+                });
+
+                html += `
+                    <div class="group-item ${activeGroupFilter === g.key ? 'active' : ''}" 
+                         data-key="${escapeHTML(g.key)}" 
+                         draggable="true"
+                         ondragstart="handleDragStart(event, '${escapeHTML(g.key)}')"
+                         ondragover="handleDragOver(event)"
+                         ondragleave="handleDragLeave(event)"
+                         ondrop="handleDrop(event, '${escapeHTML(g.key)}')"
+                         ondragend="handleDragEnd(event)"
+                         onclick="setGroupFilter('${escapeHTML(g.key)}')">
+                        <div style="display:flex; align-items:center; flex:1; min-width:0;">
+                            <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background-color:${g.color||'#2563eb'}; margin-right:6px;"></span>
+                            <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHTML(g.name)}</span>
+                            <span class="group-badge">${cnt}</span>
+                        </div>
+                        <div class="group-actions" onclick="event.stopPropagation()">
+                            <button class="action-icon-btn" onclick="openEditGroup('${escapeHTML(g.key)}')" title="แก้ไข">✏️</button>
+                            <button class="action-icon-btn" onclick="deleteGroup('${escapeHTML(g.key)}')" title="ลบ">🗑️</button>
+                        </div>
+                    </div>`;
+            }
+            container.innerHTML = html;
+        }
+
+        function initSplitters() {
+            const pLeft = document.getElementById('panel-left'), pMid = document.getElementById('panel-mid'), r1 = document.getElementById('resizer-1'), r2 = document.getElementById('resizer-2');
+            const savedLeftW = localStorage.getItem('MDM_P_LEFT_W'), savedMidW = localStorage.getItem('MDM_P_MID_W');
+            if (savedLeftW) pLeft.style.width = savedLeftW + 'px';
+            if (savedMidW) { pMid.style.flex = 'none'; pMid.style.width = savedMidW + 'px'; }
+
+            function makeResizable(resizer, getTargetPanel, isLeftResizer) {
+                let startX, startW;
+                resizer.addEventListener('mousedown', (e) => {
+                    e.preventDefault(); startX = e.clientX;
+                    const target = getTargetPanel(); startW = target.getBoundingClientRect().width;
+                    resizer.classList.add('resizing');
+                    function onMouseMove(moveEvent) {
+                        const dx = moveEvent.clientX - startX;
+                        const newW = Math.max(220, startW + dx);
+                        target.style.width = newW + 'px';
+                        if (!isLeftResizer) target.style.flex = 'none';
+                    }
+                    function onMouseUp() {
+                        resizer.classList.remove('resizing');
+                        window.removeEventListener('mousemove', onMouseMove);
+                        window.removeEventListener('mouseup', onMouseUp);
+                        localStorage.setItem('MDM_P_LEFT_W', pLeft.getBoundingClientRect().width);
+                        localStorage.setItem('MDM_P_MID_W', pMid.getBoundingClientRect().width);
+                    }
+                    window.addEventListener('mousemove', onMouseMove);
+                    window.addEventListener('mouseup', onMouseUp);
+                });
+            }
+            makeResizable(r1, () => pLeft, true);
+            makeResizable(r2, () => pMid, false);
+        }
+
+        function setGroupFilter(key) { activeGroupFilter = key; renderGroups(); renderQueue(); updateKPI(); }
+
+        function renderQueue() {
+            const container = document.getElementById('queue-list');
+            const kw = document.getElementById('queue-search').value.trim().toLowerCase();
+
+            const list = Array.from(branchDataMap.keys()).filter(b => {
+                const status = getBranchResolutionStatus(b);
+                const rec = branchDataMap.get(b);
+                
+                if (activeTab === 'new' && status.isResolved) return false;
+                if (activeTab === 'done' && !status.isResolved) return false;
+                if (activeTab === 'override' && !status.isSplit && !status.hasOverride) return false;
+                if (activeTab === 'miskey' && (!rec.isMiskey && !status.isReview)) return false;
+                if (activeGroupFilter === 'unclass' && status.isResolved) return false;
+                if (activeGroupFilter !== 'all' && activeGroupFilter !== 'unclass' && !status.groupCounts[activeGroupFilter]) return false;
+                return !kw || b.toLowerCase().includes(kw);
+            }).sort();
+
+            document.getElementById('queue-count').innerText = `${list.length} สาขา`;
+            let htmlBuffer = "";
+
+            for (let i = 0; i < list.length; i++) {
+                const b = list[i];
+                const status = getBranchResolutionStatus(b);
+                const rec = branchDataMap.get(b);
+                const isChecked = selectedCheckboxes.has(b);
+                
+                let statusBadge = "";
+                if (rec.isMiskey || status.isReview) {
+                    statusBadge = `<span style="color:#dc2626;font-weight:700;">🚨 รายการขัดแย้ง/ต้องตรวจ</span>`;
+                } else if (status.isSplit) {
+                    statusBadge = `<span style="color:#0284c7;font-weight:700;">🔀 แยกรายคน [${status.distinctGroups} กลุ่ม]</span>`;
+                } else if (status.isResolved) {
+                    const topGrp = Object.keys(status.groupCounts)[0];
+                    statusBadge = `<span style="color:#16a34a;font-weight:700;">✅ ${escapeHTML(getGroupName(topGrp))}</span>`;
+                } else if (status.resolved > 0) {
+                    statusBadge = `<span style="color:#d97706;font-weight:700;">⚡ จัดแล้ว ${status.resolved}/${status.total} คน</span>`;
+                } else {
+                    statusBadge = `<span style="color:#dc2626;font-weight:700;">⚠️ ยังไม่จัดกลุ่ม</span>`;
+                }
+
+                htmlBuffer += `
+                    <div class="queue-item ${selectedBranch === b ? 'selected' : ''} ${rec.isMiskey || status.isReview ? 'miskey' : ''}" onclick="handleQueueClick(event, '${escapeHTML(b)}')">
+                        <input type="checkbox" class="cb" ${isChecked ? 'checked' : ''} onchange="toggleSelect('${escapeHTML(b)}', this.checked)">
+                        <div class="info">
+                            <div class="name">${escapeHTML(b)} ${rec.isMiskey || status.isReview ? `🚨` : ''}</div>
+                            <div class="meta">${status.total} คน • ${statusBadge}</div>
+                        </div>
+                    </div>`;
+            }
+            container.innerHTML = htmlBuffer;
+        }
+
+        function handleQueueClick(event, b) {
+            if (event.target.tagName !== 'INPUT' && event.target.tagName !== 'SELECT') selectBranch(b);
+        }
+
+        function toggleSelect(b, checked) { checked ? selectedCheckboxes.add(b) : selectedCheckboxes.delete(b); document.getElementById('bulk-count').innerText = selectedCheckboxes.size; }
+        function selectAllVisible(status) { document.querySelectorAll('#queue-list .cb').forEach(cb => { cb.checked = status; cb.dispatchEvent(new Event('change')); }); }
+
+        function onPersonFilterInput(b, val) {
+            innerPersonFilterText = normalizeField(val);
+            renderBranchPersonnelList(b);
+        }
+
+        function filterBranchByGroup(b, grpKey) {
+            activePersonGroupFilter = (activePersonGroupFilter === grpKey) ? "" : grpKey;
+            renderBranchPersonnelList(b);
+            renderBranchSplitChips(b);
+        }
+
+        function formatRuleBadge(pClass) {
+            if (pClass.status === "OVERRIDE") {
+                return `<span class="badge-reason bg-conf-high">🔀 [ปรับแก้รายคน] กำหนดเฉพาะบุคคล</span>`;
+            }
+            if (pClass.status === "REVIEW") {
+                let reasonText = "ข้อมูลทับซ้อน/ต้องตรวจสอบ";
+                if (pClass.reason === "ANOMALY_LEVEL_MAJOR") reasonText = "ระดับการศึกษาไม่สอดคล้องกับสาขา";
+                if (pClass.reason === "FIELD_SWAP") reasonText = "ข้อมูลสลับช่อง";
+                return `<span class="badge-reason bg-conf-conflict">🚨 [ต้องตรวจสอบ] ${reasonText} (${escapeHTML(pClass.matchedRule)})</span>`;
+            }
+            if (pClass.group === "other" || pClass.status === "UNKNOWN") {
+                return `<span class="badge-reason" style="background:#fef3c7; color:#92400e; border:1px solid #fde68a;">⚠️ [รอดำเนินการ] ยังไม่มีกฎดักจับ (${escapeHTML(pClass.matchedRule)})</span>`;
+            }
+            
+            let ruleType = "เกณฑ์มาตรฐาน";
+            if (pClass.reason === "EXACT_DEGREE") ruleType = "ตรงชื่อปริญญา";
+            if (pClass.reason === "EXACT_MAJOR" || pClass.reason === "EXACT_FULL_MAJOR") ruleType = "ตรงชื่อสาขาวิชา";
+            if (pClass.reason === "COMPOUND_MAJOR") ruleType = "คำผสมในสาขา";
+            if (pClass.reason === "SPECIFIC") ruleType = "คุณวุฒิเฉพาะตำแหน่ง";
+            if (pClass.reason === "COMBO") ruleType = "วุฒิผสมสาขา";
+            if (pClass.reason === "POLICY") ruleType = "ตามแนวปฏิบัติ";
+            
+            return `<span class="badge-reason bg-conf-high">✅ [จัดอัตโนมัติ] ${ruleType} (${escapeHTML(pClass.matchedRule)})</span>`;
+        }
+
+        function renderBranchPersonnelList(b) {
+            const container = document.getElementById('person-list-container');
+            if (!container) return;
+            const rec = branchDataMap.get(b);
+            if (!rec) return;
+
+            let allPeople = [...rec.normalItems, ...(rec.miskeyItems || [])];
+
+            container.innerHTML = allPeople.filter(p => {
+                const res = classifyQualificationV80(p.level, p.degree, p.major, p.id, p);
+                if (res.status === 'BASIC_EDU') return false;
+
+                if (activePersonGroupFilter === 'review_only') {
+                    return (res.status === 'REVIEW' || res.status === 'UNKNOWN');
+                }
+                if (activePersonGroupFilter) {
+                    return res.group === activePersonGroupFilter;
+                }
+                return true; 
+            }).sort((a, b) => {
+                const resA = classifyQualificationV80(a.level, a.degree, a.major, a.id, a);
+                const resB = classifyQualificationV80(b.level, b.degree, b.major, b.id, b);
+                const pA = (resA.status === 'REVIEW' || resA.status === 'UNKNOWN') ? 0 : 1;
+                const pB = (resB.status === 'REVIEW' || resB.status === 'UNKNOWN') ? 0 : 1;
+                return pA - pB;
+            }).map((p, idx) => {
+                const pClass = classifyQualificationV80(p.level, p.degree, p.major, p.id, p);
+                
+                let approveBtn = pClass.status === "REVIEW" ? 
+                    `<button class="btn-approve" onclick="approvePerson('${escapeHTML(p.id)}')">✅ อนุมัติผ่าน</button>` : "";
+
+                let currentAssigned = (pClass.group && pClass.group !== 'none' && pClass.group !== 'other' && pClass.group !== 'review') ? pClass.group : '';
+                let personOverrideSelect = `
+                    <div style="margin-top:8px; padding-top:6px; border-top:1px dashed #cbd5e1; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                        <span style="font-size:11px; font-weight:700; color:#2563eb;">🔀 โยกย้ายกลุ่มรายคน:</span>
+                        <select class="person-override-sel" onchange="setPersonOverride('${escapeHTML(p.id)}', this.value)">
+                            <option value="">-- เอาออกจากการจัดกลุ่ม -> ไป inbox --</option>
+                            ${(v78MasterData.groups || []).map(g => `<option value="${escapeHTML(g.key)}" ${currentAssigned === g.key ? 'selected' : ''}>${escapeHTML(g.name)}</option>`).join('')}
+                        </select>
+                        ${approveBtn}
+                    </div>`;
+
+                return `
+                    <div class="person-row">
+                        <div class="person-row-hd"><strong>${idx+1}. ${escapeHTML(p.name)} (${escapeHTML(p.pos || '-')})</strong></div>
+                        <div>• ระดับ: ${escapeHTML(p.level)} | วุฒิ: ${escapeHTML(p.degree)} (${escapeHTML(p.major)})</div>
+                        ${formatRuleBadge(pClass)}
+                        ${personOverrideSelect}
+                    </div>`;
+            }).join('') || '<div style="text-align:center;color:#64748b;padding:12px;">ไม่พบรายการ</div>';
+        }
+
+        function renderBranchSplitChips(b) {
+            const wrap = document.getElementById('branch-split-chips-wrap');
+            if (!wrap) return;
+            const rec = branchDataMap.get(b);
+            const status = getBranchResolutionStatus(b);
+
+            if (status.resolved === 0 && status.pending === 0) { wrap.innerHTML = ''; return; }
+
+            const groupChips = Object.entries(status.groupCounts).map(([grpKey, count]) => {
+                const isCurrentActive = (activePersonGroupFilter === grpKey);
+                return `
+                    <button type="button" class="btn-sm" 
+                            style="margin:2px; font-size:11px; padding:3px 8px; border-radius:12px; cursor:pointer; 
+                                   ${isCurrentActive ? 'background:#166534; color:#fff; font-weight:bold; border-color:#166534;' : 'background:#fff; color:#15803d; border:1px solid #bbf7d0;'}" 
+                            onclick="filterBranchByGroup('${escapeHTML(b)}', '${grpKey}')">
+                        ${escapeHTML(getGroupName(grpKey))}: <b>${count} คน</b>
+                    </button>`;
+            }).join('');
+
+            let pendingChip = "";
+            if (status.pending > 0) {
+                const isPendingActive = (activePersonGroupFilter === 'other' || activePersonGroupFilter === 'review');
+                const chipLabel = (rec.isMiskey || status.isReview) ? "🚨 ต้องตรวจสอบ" : "⚠️ ยังไม่จัดกลุ่ม";
+                const chipStyle = (rec.isMiskey || status.isReview)
+                    ? (isPendingActive ? 'background:#dc2626; color:#fff; font-weight:bold; border-color:#dc2626;' : 'background:#fff; color:#dc2626; border:1px solid #fca5a5;')
+                    : (isPendingActive ? 'background:#d97706; color:#fff; font-weight:bold; border-color:#d97706;' : 'background:#fff; color:#b45309; border:1px solid #fde68a;');
+
+                pendingChip = `
+                    <button type="button" class="btn-sm" 
+                            style="margin:2px; font-size:11px; padding:3px 8px; border-radius:12px; cursor:pointer; ${chipStyle}" 
+                            onclick="filterBranchByGroup('${escapeHTML(b)}', 'other')">
+                        ${chipLabel}: <b>${status.pending} คน</b>
+                    </button>`;
+            }
+
+            wrap.innerHTML = `
+                <div class="split-summary-box">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                        <span style="font-weight:700; color:#166534;">📊 สรุปการกระจายกลุ่มในสาขานี้ (คลิกชิปเพื่อกรอง):</span>
+                        ${activePersonGroupFilter ? `<button class="btn-sm" style="font-size:10px; padding:2px 6px;" onclick="filterBranchByGroup('${escapeHTML(b)}', '')">✕ แสดงทุกคน</button>` : ''}
+                    </div>
+                    <div style="display:flex; flex-wrap:wrap; gap:4px;">${groupChips} ${pendingChip}</div>
+                </div>`;
+        }
+
+        function selectBranch(b) {
+            selectedBranch = b;
+            activePersonGroupFilter = "";
+            innerPersonFilterText = "";
+            renderQueue();
+
+            const rec = branchDataMap.get(b);
+            const status = getBranchResolutionStatus(b);
+            const firstPerson = rec.normalItems[0] || rec.miskeyItems[0];
+            const sampleClass = firstPerson ? classifyQualificationV80(firstPerson.level, firstPerson.degree, firstPerson.major, null, null) : { group: '' };
+            const currentSelectedGroup = sampleClass.group !== 'none' && sampleClass.group !== 'other' && sampleClass.group !== 'review' ? sampleClass.group : '';
+            let grpOptions = (v78MasterData.groups || []).map(g => `<option value="${escapeHTML(g.key)}" ${currentSelectedGroup === g.key ? 'selected' : ''}>${escapeHTML(g.name)}</option>`).join('');
+
+            document.getElementById('detail-panel').innerHTML = `
+                <div id="branch-split-chips-wrap"></div>
+                <div><div class="fld-label">📌 สาขาวิชาเอกหลัก:</div><div class="fld-val" style="color:var(--accent);font-weight:700;">${escapeHTML(b)}</div></div>
+                <div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                        <div class="fld-label" style="margin-bottom:0;">👥 รายชื่อบุคลากร (${status.total} คน):</div>
+                        ${status.hasOverride ? `<button class="btn-sm" style="font-size:10.5px; padding:2px 6px;" onclick="resetBranchOverrides('${escapeHTML(b)}')">🔄 รีเซ็ตทุกคนกลับตามค่าเริ่มต้น</button>` : ''}
+                    </div>
+                    <input type="text" class="search-inp" placeholder="🔍 กรองชื่อ, สำนัก/กอง, หรือสถานะ..." oninput="onPersonFilterInput('${escapeHTML(b)}', this.value)" style="margin-bottom:6px;">
+                    <div class="person-audit-box" id="person-list-container"></div>
+                </div>
+                <div><div class="fld-label">🎯 -- เอาออกจากการจัดกลุ่ม --:</div><select id="single-group-select" class="fld-input"><option value="">-- ยังไม่จัดกลุ่ม (Inbox) --</option>${grpOptions}</select></div>
+                <div style="display:flex; gap:6px; margin-top:5px;">
+                    <button class="btn-sm primary" style="flex:1;padding:8px;" onclick="saveSingle('${escapeHTML(b)}')">💾 บันทึกกฎสาขาวิชาเอก</button>
+                    <button class="btn-sm danger" style="padding:8px;" onclick="unassignBranch('${escapeHTML(b)}')">🗑️ ยกเลิกการจัดกลุ่ม</button>
+                </div>`;
+
+            renderBranchSplitChips(b);
+            renderBranchPersonnelList(b);
+        }
+
+        function resetBranchOverrides(b) {
+            const rec = branchDataMap.get(b); if (!rec) return;
+            if (!confirm(`คุณต้องการล้างค่าที่กำหนดเฉพาะคนในสาขา "${b}" ทั้งหมดใช่หรือไม่?`)) return;
+            pushSnapshot();
+            [...rec.normalItems, ...rec.miskeyItems].forEach(p => {
+                delete v78MasterData.personOverrides[p.id];
+                delete v78MasterData.personOverrides[`${p.pos}_${p.name}`];
+            });
+            clearBranchCache();
+            renderGroups(); renderQueue(); updateKPI(); selectBranch(b);
+        }
+
+        function pushSnapshot() {
+            undoStack.push(structuredClone(v78MasterData));
+            document.getElementById('btn-undo').disabled = false;
+        }
+
+        function setPersonOverride(personId, grpKey) {
+            pushSnapshot();
+            if (!v78MasterData.personOverrides) v78MasterData.personOverrides = {};
+            if (!grpKey) delete v78MasterData.personOverrides[personId];
+            else v78MasterData.personOverrides[personId] = grpKey;
+            clearBranchCache();
+            renderGroups(); renderQueue(); updateKPI();
+            if (selectedBranch) selectBranch(selectedBranch);
+        }
+async function saveSingle(b) {
+            const selectEl = document.getElementById('single-group-select');
+            let grp = selectEl ? selectEl.value : "";
+            
+            console.log("📌 กำลังบันทึกสาขา:", b);
+            console.log("📌 ค่า Group Key ที่เลือกได้:", grp);
+
+            if (!grp) { 
+                alert("❌ กรุณาเลือกกลุ่มวิชาชีพจาก Dropdown ด้านล่างก่อน!"); 
+                return; 
+            }
+
+            pushSnapshot();
+            
+            if (!v78MasterData.exactMajorRules) v78MasterData.exactMajorRules = [];
+            
+            const cleanPattern = b.trim(); 
+            const cleanTarget = normalizeField(cleanPattern);
+            
+            v78MasterData.exactMajorRules = v78MasterData.exactMajorRules.filter(r => normalizeField(r.pattern) !== cleanTarget);
+            v78MasterData.exactMajorRules.unshift({ pattern: cleanPattern, group: grp });
+            
+            if (typeof clearBranchCache === "function") clearBranchCache();
+            if (typeof classCache !== "undefined" && classCache.clear) classCache.clear();
+
+            prepareRulesIndex(v78MasterData);
+            
+            renderGroups(); 
+            renderQueue(); 
+            updateKPI(); 
+            selectBranch(b);
+
+            await saveToServer(true); 
+            alert(`✅ บันทึกสำเร็จ! สาขา "${cleanPattern}" ผูกกับรหัสกลุ่ม "${grp}" เรียบร้อย`);
+        }
+        function unassignBranch(b) {
+            pushSnapshot();
+            if (v78MasterData.exactMajorRules) v78MasterData.exactMajorRules = v78MasterData.exactMajorRules.filter(r => normalizeField(r.pattern) !== normalizeField(b));
+            prepareRulesIndex(v78MasterData);
+            renderGroups(); renderQueue(); updateKPI(); selectBranch(b);
+        }
+
+        async function bulkAssign() {
+            const grp = document.getElementById('bulk-group-select').value;
+            if (!grp || selectedCheckboxes.size === 0) { alert("กรุณาเลือกกลุ่มและสาขาอย่างน้อย 1 รายการ"); return; }
+            pushSnapshot();
+            if (!v78MasterData.exactMajorRules) v78MasterData.exactMajorRules = [];
+            selectedCheckboxes.forEach(b => {
+                const idx = v78MasterData.exactMajorRules.findIndex(r => normalizeField(r.pattern) === normalizeField(b));
+                if (idx !== -1) v78MasterData.exactMajorRules[idx].group = grp;
+                else v78MasterData.exactMajorRules.unshift({ pattern: b, group: grp });
+            });
+            selectedCheckboxes.clear();
+            document.getElementById('bulk-count').innerText = "0";
+            prepareRulesIndex(v78MasterData);
+            renderGroups(); renderQueue(); updateKPI();
+            if (selectedBranch) selectBranch(selectedBranch);
+        }
+
+        function undoLast() {
+            if (undoStack.length === 0) return;
+            v78MasterData = undoStack.pop();
+            if (undoStack.length === 0) document.getElementById('btn-undo').disabled = true;
+            prepareRulesIndex(v78MasterData);
+            renderGroups(); renderQueue(); updateKPI();
+            if (selectedBranch) selectBranch(selectedBranch);
+        }
+
+        function populateBulkDropdown() { 
+            document.getElementById('bulk-group-select').innerHTML = '<option value="">-- เลือกกลุ่ม --</option>' + (v78MasterData.groups || []).map(g => `<option value="${escapeHTML(g.key)}">${escapeHTML(g.name)}</option>`).join(''); 
+        }
+
+        function updateKPI() {
+            const total = branchDataMap.size; 
+            let mapped = 0, miskeyCount = 0, pendingPersons = 0, resolvedPersons = 0;
+            let countNew = 0, countDone = 0, countOverride = 0, countMiskey = 0;
+
+            branchDataMap.forEach((rec, b) => {
+                const status = getBranchResolutionStatus(b);
+                if (status.isResolved) mapped++;
+                if (rec.isMiskey || status.isReview) miskeyCount += (rec.miskeyItems.length || 1);
+                pendingPersons += status.pending;
+                resolvedPersons += status.resolved;
+
+                let isMatch = activeGroupFilter === 'unclass' ? !status.isResolved : (activeGroupFilter === 'all' || !!status.groupCounts[activeGroupFilter]);
+                if (isMatch) {
+                    if (status.isResolved) countDone++; else countNew++;
+                    if (status.isSplit || status.hasOverride) countOverride++;
+                    if (rec.isMiskey || status.isReview) countMiskey++;
+                }
+            });
+
+            document.getElementById('kpi-inbox').innerText = total - mapped;
+            document.getElementById('kpi-inbox-persons').innerText = `${pendingPersons} คนตกค้าง`;
+            document.getElementById('kpi-rules').innerText = (v78MasterData.exactMajorRules?.length || 0) + (v78MasterData.compoundMajorRules?.length || 0);
+            document.getElementById('kpi-mapped').innerText = mapped;
+            document.getElementById('kpi-mapped-persons').innerText = `${resolvedPersons} คนจัดแล้ว`;
+            document.getElementById('kpi-miskey').innerText = miskeyCount;
+            
+            const totalPersons = pendingPersons + resolvedPersons;
+            const pct = totalPersons > 0 ? ((resolvedPersons / totalPersons) * 100).toFixed(1) : 0;
+            document.getElementById('kpi-pct').innerText = `${pct}%`;
+            document.getElementById('progress-fill').style.width = `${pct}%`;
+
+            document.getElementById('tab-count-new').innerText = countNew;
+            document.getElementById('tab-count-done').innerText = countDone;
+            document.getElementById('tab-count-override').innerText = countOverride;
+            document.getElementById('tab-count-miskey').innerText = countMiskey;
+        }
+
+        document.getElementById('queue-tabs').addEventListener('click', (e) => {
+            const targetBtn = e.target.closest('.tab-btn');
+            if (targetBtn) {
+                document.querySelectorAll('#queue-tabs .tab-btn').forEach(b => b.classList.remove('active'));
+                targetBtn.classList.add('active'); 
+                activeTab = targetBtn.getAttribute('data-tab'); 
+                renderQueue();
+            }
+        });
+
+        function openAddGroup() { document.getElementById('modal-grp-key').value = ''; document.getElementById('modal-grp-name').value = ''; document.getElementById('modal-grp-color').value = '#2563eb'; document.getElementById('group-modal-title').innerText = '➕ เพิ่มกลุ่มสายงานวิชาชีพ'; document.getElementById('group-modal').classList.remove('hidden'); }
+        function openEditGroup(key) { const g = (v78MasterData.groups || []).find(item => item.key === key); if (!g) return; document.getElementById('modal-grp-key').value = g.key; document.getElementById('modal-grp-name').value = g.name; document.getElementById('modal-grp-color').value = g.color || '#2563eb'; document.getElementById('group-modal-title').innerText = '✏️ แก้ไขกลุ่มสายงานวิชาชีพ'; document.getElementById('group-modal').classList.remove('hidden'); }
+        function closeGroupModal() { document.getElementById('group-modal').classList.add('hidden'); }
+        function saveGroupModal() {
+            const key = document.getElementById('modal-grp-key').value, name = document.getElementById('modal-grp-name').value.trim(), color = document.getElementById('modal-grp-color').value;
+            if (!name) return;
+            pushSnapshot();
+            if (!v78MasterData.groups) v78MasterData.groups = [];
+            if (key) { const g = v78MasterData.groups.find(item => item.key === key); if (g) { g.name = name; g.color = color; } } 
+            else { v78MasterData.groups.push({ key: "grp_" + crypto.randomUUID(), name: name, color: color }); }
+            closeGroupModal(); renderGroups(); populateBulkDropdown();
+        }
+
+        function deleteGroup(groupKey) {
+            if (!confirm(`คุณต้องการลบกลุ่มนี้ใช่หรือไม่?`)) return;
+            pushSnapshot();
+            v78MasterData.groups = (v78MasterData.groups || []).filter(g => g.key !== groupKey);
+            prepareRulesIndex(v78MasterData);
+            renderGroups(); renderQueue(); updateKPI(); populateBulkDropdown();
+        }
+
+        function getGroupName(key) { 
+            if (!key || key === 'none' || key === 'other') return "ยังไม่จัดกลุ่ม";
+            if (key === 'review') return "🚨 รายการขัดแย้ง";
+            const g = (v78MasterData.groups || []).find(grp => grp.key === key); 
+            return g ? g.name : key; 
+        }
+
+        function openAuditMatrixModal() {
+            const tbody = document.getElementById('audit-matrix-tbody');
+            tbody.innerHTML = '';
+
+            const groupStats = {};
+            (v78MasterData.groups || []).forEach(g => { groupStats[g.key] = { name: g.name, branches: 0, persons: 0, color: g.color }; });
+            groupStats['other'] = { name: '📝 ปริญญาสาขาอื่นๆ / วุฒิอื่นๆ', branches: 0, persons: 0, color: '#6b7280' };
+
+            let totalCompetencyCount = 0;
+            let totalBranchesSet = new Set();
+            let uniquePersonIds = new Set();
+
+            branchDataMap.forEach((rec, b) => {
+                totalBranchesSet.add(b);
+                const status = getBranchResolutionStatus(b);
+                
+                [...rec.normalItems, ...rec.miskeyItems].forEach(p => uniquePersonIds.add(p.pos ? `${p.pos}_${p.name}` : p.id));
+
+                let branchGroupMapped = false;
+                Object.entries(status.groupCounts).forEach(([gKey, count]) => {
+                    if (groupStats[gKey]) {
+                        groupStats[gKey].branches += 1;
+                        groupStats[gKey].persons += count;
+                        totalCompetencyCount += count;
+                        branchGroupMapped = true;
+                    }
+                });
+
+                if (status.pending > 0) {
+                    if (!branchGroupMapped) groupStats['other'].branches += 1;
+                    groupStats['other'].persons += status.pending;
+                    totalCompetencyCount += status.pending;
+                }
+            });
+
+            let html = '';
+            let idx = 1;
+            let totalPersonsSum = 0;
+
+            Object.entries(groupStats).forEach(([gKey, stat]) => {
+                totalPersonsSum += stat.persons;
+                const pct = totalCompetencyCount > 0 ? ((stat.persons / totalCompetencyCount) * 100).toFixed(1) : '0.0';
+                html += `
+                    <tr>
+                        <td style="text-align:center;">${idx++}</td>
+                        <td style="font-weight:bold; color:var(--primary);">
+                            <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${stat.color || '#2563eb'}; margin-right:6px;"></span>
+                            ${escapeHTML(stat.name)}
+                        </td>
+                        <td style="text-align:center;">${stat.branches} สาขา</td>
+                        <td style="text-align:center; font-weight:bold;">${stat.persons.toLocaleString()} คน</td>
+                        <td style="text-align:center; color:#0369a1; font-weight:bold;">${pct}%</td>
+                    </tr>`;
+            });
+
+            html += `
+                <tr style="background:#f1f5f9; border-top:2px solid var(--primary); font-weight:bold;">
+                    <td style="text-align:center;">-</td>
+                    <td style="color:var(--primary); font-size:13px;">📊 รวมทั้งสิ้น (Grand Total)</td>
+                    <td style="text-align:center; color:var(--primary);">${totalBranchesSet.size} สาขา</td>
+                    <td style="text-align:center; color:var(--primary); font-size:12px;">
+                        ${totalPersonsSum.toLocaleString()} รายการ<br>
+                        <span style="font-size:10.5px; color:#64748b; font-weight:normal;">(จากบุคลากรจริง ${uniquePersonIds.size.toLocaleString()} คน)</span>
+                    </td>
+                    <td style="text-align:center; color:#16a34a; font-size:13px;">100.0% <span style="font-size:10px;">✅ ครบถ้วน</span></td>
+                </tr>`;
+
+            tbody.innerHTML = html;
+            document.getElementById('audit-matrix-modal').classList.remove('hidden');
+        }
+
+        function closeAuditMatrixModal() { document.getElementById('audit-matrix-modal').classList.add('hidden'); }
+
+        async function generateMasterAuditExcel() {
+            const workbook = new ExcelJS.Workbook();
+            const now = new Date();
+            const timeStampStr = `${String(now.getDate()).padStart(2,'0')}/${String(now.getMonth()+1).padStart(2,'0')}/${now.getFullYear()+543} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+
+            const s1 = workbook.addWorksheet('1. สรุปภาพรวมรายกลุ่ม', { views: [{ showGridLines: true }] });
+            s1.addRow([`รายงานสรุปโครงสร้าง Master Data Matrix สตง. - ข้อมูล ณ วันที่ ${timeStampStr}`]);
+            s1.mergeCells('A1:E1');
+            s1.getCell('A1').font = { name: 'Arial', size: 12, bold: true, color: { argb: '1F4E78' } };
+            s1.addRow([]);
+
+            const h1 = s1.addRow(['ลำดับ', 'กลุ่มสายงาน', 'จำนวนสาขาวิชาเอกที่ผูก', 'จำนวนบุคลากร (คน)', 'สัดส่วนร้อยละ (%)']);
+            h1.height = 25;
+            h1.eachCell(c => {
+                c.font = { name: 'Arial', size: 11, bold: true, color: { argb: 'FFFFFF' } };
+                c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1F4E78' } };
+                c.alignment = { horizontal: 'center', vertical: 'middle' };
+            });
+
+            const groupStats = {};
+            (v78MasterData.groups || []).forEach(g => { groupStats[g.key] = { name: g.name, branches: 0, persons: 0 }; });
+            groupStats['other'] = { name: '📝 ปริญญาสาขาอื่นๆ / วุฒิอื่นๆ', branches: 0, persons: 0 };
+
+            let totalPersonsAll = 0;
+            let totalBranchesSet = new Set();
+            let uniquePersonIds = new Set();
+
+            branchDataMap.forEach((rec, b) => {
+                totalBranchesSet.add(b);
+                const status = getBranchResolutionStatus(b);
+                [...rec.normalItems, ...rec.miskeyItems].forEach(p => uniquePersonIds.add(p.pos ? `${p.pos}_${p.name}` : p.id));
+
+                let branchGroupMapped = false;
+                Object.entries(status.groupCounts).forEach(([gKey, count]) => {
+                    if (groupStats[gKey]) {
+                        groupStats[gKey].branches += 1;
+                        groupStats[gKey].persons += count;
+                        totalPersonsAll += count;
+                        branchGroupMapped = true;
+                    }
+                });
+                if (status.pending > 0) {
+                    if (!branchGroupMapped) groupStats['other'].branches += 1;
+                    groupStats['other'].persons += status.pending;
+                    totalPersonsAll += status.pending;
+                }
+            });
+
+            let s1Idx = 1;
+            Object.entries(groupStats).forEach(([_, stat]) => {
+                const pct = totalPersonsAll > 0 ? ((stat.persons / totalPersonsAll) * 100).toFixed(1) : 0;
+                const r = s1.addRow([s1Idx++, stat.name, stat.branches, stat.persons, parseFloat(pct)]);
+                r.eachCell((c, col) => {
+                    c.font = { name: 'Arial', size: 10 };
+                    c.alignment = { horizontal: (col === 2 ? 'left' : 'center'), vertical: 'middle' };
+                });
+            });
+
+            const totalRow = s1.addRow([
+                '-',
+                `รวมทั้งสิ้น (จากบุคลากรจริง ${uniquePersonIds.size} คน)`,
+                totalBranchesSet.size,
+                totalPersonsAll,
+                100.0
+            ]);
+            totalRow.height = 26;
+            totalRow.eachCell((c, col) => {
+                c.font = { name: 'Arial', size: 11, bold: true, color: { argb: '1F4E78' } };
+                c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'E2E8F0' } };
+                c.alignment = { horizontal: (col === 2 ? 'left' : 'center'), vertical: 'middle' };
+            });
+
+            const s2 = workbook.addWorksheet('2. ผูกกฎและคำค้นทั้งหมด', { views: [{ state: 'frozen', ySplit: 1, showGridLines: true }] });
+            const h2 = s2.addRow(['ลำดับ', 'กลุ่มสายงาน', 'ชื่อสาขาวิชาเอก/วุฒิ', 'จำนวนคน', 'ประเภทกฎที่ใช้จับ', 'คำค้น/กฎที่ Match', 'สถานะการประมวลผล']);
+            h2.height = 25;
+            h2.eachCell(c => {
+                c.font = { name: 'Arial', size: 11, bold: true, color: { argb: 'FFFFFF' } };
+                c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '2F5597' } };
+                c.alignment = { horizontal: 'center', vertical: 'middle' };
+            });
+
+            let s2Idx = 1;
+            branchDataMap.forEach((rec, b) => {
+                const sample = rec.normalItems[0] || rec.miskeyItems[0];
+                if (sample) {
+                    const pClass = classifyQualificationV80(sample.level, sample.degree, sample.major, null, null);
+                    const r = s2.addRow([
+                        s2Idx++,
+                        getGroupName(pClass.group),
+                        b,
+                        rec.normalItems.length + rec.miskeyItems.length,
+                        pClass.reason,
+                        pClass.matchedRule,
+                        pClass.status
+                    ]);
+                    r.eachCell((c, col) => {
+                        c.font = { name: 'Arial', size: 10 };
+                        c.alignment = { horizontal: (col === 1 || col === 4 || col === 7) ? 'center' : 'left', vertical: 'middle' };
+                    });
+                }
+            });
+
+            const s3 = workbook.addWorksheet('3. รายการข้อยกเว้นและข้อขัดแย้ง', { views: [{ state: 'frozen', ySplit: 1, showGridLines: true }] });
+            const h3 = s3.addRow(['ลำดับ', 'เลขที่ตำแหน่ง', 'ชื่อ-นามสกุล', 'สำนัก/กอง', 'ระดับการศึกษา', 'วุฒิการศึกษา', 'สาขาวิชาเอก', 'กลุ่มสายงานที่จัดได้', 'ประเภทสถานะ', 'เหตุผล/ข้อสังเกต']);
+            h3.height = 25;
+            h3.eachCell(c => {
+                c.font = { name: 'Arial', size: 11, bold: true, color: { argb: 'FFFFFF' } };
+                c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'C2410C' } };
+                c.alignment = { horizontal: 'center', vertical: 'middle' };
+            });
+
+            let s3Idx = 1;
+            branchDataMap.forEach((rec) => {
+                const allP = [...rec.normalItems, ...rec.miskeyItems];
+                allP.forEach(p => {
+                    const pClass = classifyQualificationV80(p.level, p.degree, p.major, p.id, p);
+                    if (pClass.status === 'OVERRIDE' || pClass.status === 'REVIEW' || pClass.group === 'other' || pClass.group === 'none' || pClass.reason === 'ANOMALY_LEVEL_MAJOR' || pClass.reason === 'CONFLICT') {
+                        const r = s3.addRow([
+                            s3Idx++,
+                            p.pos,
+                            p.name,
+                            p.dept,
+                            p.level,
+                            p.degree,
+                            p.major,
+                            getGroupName(pClass.group),
+                            pClass.status,
+                            p.miskeyReason || pClass.reason || pClass.matchedRule
+                        ]);
+                        r.eachCell((c, col) => {
+                            c.font = { name: 'Arial', size: 10 };
+                            c.alignment = { horizontal: (col === 1 || col === 2 || col === 9) ? 'center' : 'left', vertical: 'middle' };
+                        });
+                    }
+                });
+            });
+
+            [s1, s2, s3].forEach(ws => {
+                ws.columns.forEach(column => {
+                    let maxLen = 0;
+                    column.eachCell({ includeEmpty: true }, cell => {
+                        if (cell.value) {
+                            const lines = cell.value.toString().split('\n');
+                            lines.forEach(l => { if(l.length > maxLen) maxLen = l.length; });
+                        }
+                    });
+                    column.width = Math.min(Math.max(maxLen + 4, 15), 50);
+                });
+            });
+
+            s2.autoFilter = { from: { row: 1, column: 1 }, to: { row: s2.rowCount, column: 7 } };
+            s3.autoFilter = { from: { row: 1, column: 1 }, to: { row: s3.rowCount, column: 10 } };
+
+            const buffer = await workbook.xlsx.writeBuffer();
+            saveAs(new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), `รายงานสรุป_MasterData_สตง_${now.toISOString().slice(0,10)}.xlsx`);
+        }
+
+        function openTierAuditModal() { 
+            renderTierAuditGrid(); 
+            renderTierConflictTable(); 
+            document.getElementById('tier-sim-input').value = '';
+            document.getElementById('tier-sim-result').innerText = 'ผลลัพธ์: -';
+            document.getElementById('tier-audit-modal').classList.remove('hidden'); 
+        }
+        function closeTierAuditModal() { document.getElementById('tier-audit-modal').classList.add('hidden'); }
+        function switchTierAuditSubTab(tab) {
+            document.getElementById('tier-subtab-grid').classList.toggle('hidden', tab !== 'grid');
+            document.getElementById('tier-subtab-conflicts').classList.toggle('hidden', tab !== 'conflicts');
+            document.getElementById('tier-tab-btn-1').classList.toggle('active', tab === 'grid');
+            document.getElementById('tier-tab-btn-2').classList.toggle('active', tab === 'conflicts');
+        }
+
+        function testTierSimulation(val) {
+            const resEl = document.getElementById('tier-sim-result');
+            if (!val.trim()) { resEl.innerText = "ผลลัพธ์: -"; return; }
+            const tier = classifyEducationTier(val.trim());
+            const isCustom = v78MasterData.tierOverrides && v78MasterData.tierOverrides[val.trim()];
+            resEl.innerHTML = `ผลลัพธ์: <span style="color:#16a34a;">✅ ระดับ ${tier.id}: ${escapeHTML(tier.name)} ${isCustom ? '[กำหนดเฉพาะคำ]' : '[วิเคราะห์อัตโนมัติ]'}</span>`;
+        }
+
+        function toggleTierDefault(tierId) {
+            pushSnapshot();
+            if (!v78MasterData.tierDefaults) v78MasterData.tierDefaults = [1, 2, 3, 4, 5, 6];
+            const idx = v78MasterData.tierDefaults.indexOf(tierId);
+            if (idx !== -1) v78MasterData.tierDefaults.splice(idx, 1);
+            else v78MasterData.tierDefaults.push(tierId);
+            
+            renderTierAuditGrid();
+            
+            scanExcel().then(() => { 
+                renderGroups(); 
+                renderQueue(); 
+                updateKPI(); 
+                saveToServer(true); 
+            });
+        }
+
+        function renderTierAuditGrid() {
+            const container = document.getElementById('tier-subtab-grid');
+            const tierBuckets = {};
+            STANDARD_TIERS_DEF.forEach(t => { tierBuckets[t.id] = new Map(); });
+
+            scannedRawLevelsMap.forEach((instances, rawLvl) => {
+                if (!rawLvl || rawLvl === '(ว่าง)') return;
+                const tier = classifyEducationTier(rawLvl, instances[0]?.degree || '');
+                if (tier && tierBuckets[tier.id]) {
+                    tierBuckets[tier.id].set(rawLvl, instances.length);
+                }
+            });
+
+            if (v78MasterData.tierOverrides) {
+                Object.entries(v78MasterData.tierOverrides).forEach(([word, tId]) => {
+                    if (tierBuckets[tId] && !tierBuckets[tId].has(word)) {
+                        tierBuckets[tId].set(word, 0);
+                    }
+                });
+            }
+
+            const currentDefaults = new Set(v78MasterData.tierDefaults || [1, 2, 3, 4, 5, 6]);
+
+            container.innerHTML = STANDARD_TIERS_DEF.map(tier => {
+                const mapEntries = Array.from(tierBuckets[tier.id].entries());
+                const isDefChecked = currentDefaults.has(tier.id);
+                return `
+                    <div class="tier-card">
+                        <div>
+                            <div class="tier-card-hd">
+                                <div><span style="font-weight:700; color:var(--primary);">${tier.id}. ${escapeHTML(tier.name)}</span></div>
+                                <div style="display:flex; align-items:center; gap:6px;">
+                                    <span class="tier-badge-def ${isDefChecked ? 'checked' : 'unchecked'}" onclick="toggleTierDefault(${tier.id})" title="คลิกเพื่อสลับค่าเริ่มต้นในหน้าหลัก">
+                                        ${isDefChecked ? 'เปิดเลือกเริ่มต้น' : 'ปิดไว้'}
+                                    </span>
+                                    <button class="btn-sm primary" style="font-size:10px; padding:2px 6px;" onclick="openAddTierKeywordModal(${tier.id})">+ เพิ่มคำ</button>
+                                </div>
+                            </div>
+                            <div style="font-size:11px; color:#64748b; margin-bottom:4px;">พบข้อความ: <strong>${mapEntries.length}</strong> รูปแบบ</div>
+                            <div class="tier-chip-box">
+                                ${mapEntries.map(([txt, count]) => `
+                                    <span class="tier-chip">
+                                        ${escapeHTML(txt)} 
+                                        <span style="font-size:10px; color:#64748b; font-weight:bold;">• ${count} คน</span>
+                                        <button class="tier-chip-btn" onclick="openTierRemapModal('${escapeHTML(txt.replace(/'/g, "\\'"))}')" title="แก้ไข/ย้ายระดับ">✎</button>
+                                        <button class="tier-chip-del" onclick="deleteTierOverride('${escapeHTML(txt.replace(/'/g, "\\'"))}')" title="ลบกฎการแปลงนี้">✕</button>
+                                    </span>
+                                `).join('') || '<span style="color:#94a3b8; font-size:11px;">ไม่มีข้อมูล</span>'}
+                            </div>
+                        </div>
+                    </div>`;
+            }).join('');
+        }
+
+        function openAddTierKeywordModal(tierId) {
+            const tier = STANDARD_TIERS_DEF.find(t => t.id === tierId);
+            document.getElementById('tier-add-target-id').value = tierId;
+            document.getElementById('tier-add-keyword-input').value = '';
+            document.getElementById('tier-add-modal-title').innerText = `➕ เพิ่มคำดักจับเข้า: ${tier.name}`;
+            document.getElementById('tier-add-modal').classList.remove('hidden');
+        }
+        function closeAddTierModal() { document.getElementById('tier-add-modal').classList.add('hidden'); }
+
+        function saveAddTierKeyword() {
+            const tierId = parseInt(document.getElementById('tier-add-target-id').value);
+            const word = document.getElementById('tier-add-keyword-input').value.trim();
+            if (!word) { alert("กรุณากรอกข้อความระดับการศึกษา"); return; }
+            if (word.length <= 2) {
+                if (!confirm("⚠️ คำนี้สั้นมาก อาจไปทับซ้อนกับการจัดกลุ่มระดับอื่น ยืนยันเพิ่มหรือไม่?")) return;
+            }
+
+            pushSnapshot();
+            if (!v78MasterData.tierOverrides) v78MasterData.tierOverrides = {};
+            v78MasterData.tierOverrides[word] = tierId;
+            closeAddTierModal();
+            renderTierAuditGrid();
+            scanExcel().then(() => { renderGroups(); renderQueue(); updateKPI(); });
+        }
+
+        function deleteTierOverride(rawText) {
+            if (!confirm(`ต้องการลบกฎการแปลงระดับของคำว่า "${rawText}" ใช่หรือไม่?`)) return;
+            pushSnapshot();
+            if (v78MasterData.tierOverrides) delete v78MasterData.tierOverrides[rawText];
+            renderTierAuditGrid();
+            scanExcel().then(() => { renderGroups(); renderQueue(); updateKPI(); });
+        }
+
+        function renderTierConflictTable() {
+            const tbody = document.getElementById('tier-conflict-tbody');
+            const conflicts = [];
+            scannedRawLevelsMap.forEach((instances, rawLvl) => {
+                instances.forEach(item => { if (item.isConflict) conflicts.push({ rawLvl, degree: item.degree, major: item.major, reason: item.reason }); });
+            });
+            document.getElementById('tier-modal-conflict-count').innerText = conflicts.length;
+            tbody.innerHTML = conflicts.map(c => `
+                <tr>
+                    <td style="font-weight:bold; color:var(--danger);">${escapeHTML(c.rawLvl)}</td>
+                    <td>${escapeHTML(c.degree || '-')}</td>
+                    <td>${escapeHTML(c.major || '-')}</td>
+                    <td style="color:#b45309; font-weight:600;">${escapeHTML(c.reason)}</td>
+                    <td style="text-align:center;"><button class="btn-sm primary" onclick="openTierRemapModal('${escapeHTML(c.rawLvl.replace(/'/g, "\\'"))}')">ย้ายระดับ</button></td>
+                </tr>
+            `).join('') || '<tr><td colspan="5" style="text-align:center; color:#16a34a; padding:16px;">✅ ไม่พบข้อมูลขัดแย้ง</td></tr>';
+        }
+
+        let activeTierRemapRaw = "";
+        function openTierRemapModal(rawText) {
+            activeTierRemapRaw = rawText;
+            document.getElementById('tier-remap-raw-text').innerText = rawText;
+            const currentTier = classifyEducationTier(rawText);
+            document.getElementById('tier-remap-target-select').innerHTML = STANDARD_TIERS_DEF.map(t => `<option value="${t.id}" ${t.id === currentTier.id ? 'selected' : ''}>${t.id}. ${t.name}</option>`).join('');
+            document.getElementById('tier-remap-modal').classList.remove('hidden');
+        }
+
+        function closeTierRemapModal() { document.getElementById('tier-remap-modal').classList.add('hidden'); }
+        function saveTierRemapModal() {
+            const targetId = parseInt(document.getElementById('tier-remap-target-select').value);
+            if (!activeTierRemapRaw) return;
+            pushSnapshot();
+            if (!v78MasterData.tierOverrides) v78MasterData.tierOverrides = {};
+            v78MasterData.tierOverrides[activeTierRemapRaw] = targetId;
+            closeTierRemapModal();
+            renderTierAuditGrid();
+            renderTierConflictTable();
+            scanExcel().then(() => { renderGroups(); renderQueue(); updateKPI(); });
+        }
+
+        function exportMasterDataJSON() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(v78MasterData, null, 2));
+            const dlAnchor = document.createElement('a');
+            const today = new Date().toISOString().slice(0,10);
+            dlAnchor.setAttribute("href", dataStr);
+            dlAnchor.setAttribute("download", `MasterData_Backup_${today}.json`);
+            document.body.appendChild(dlAnchor);
+            dlAnchor.click();
+            dlAnchor.remove();
+        }
+
+        function triggerImportJSON() { document.getElementById('import-json-file').click(); }
+
+        function handleImportJSONFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const imported = JSON.parse(e.target.result);
+                    if (!imported.groups || !Array.isArray(imported.groups)) {
+                        throw new Error("โครงสร้าง JSON ไม่ถูกต้อง (ไม่พบ groups)");
+                    }
+                    if (confirm(`ตรวจพบข้อมูล Master Data. ต้องการนำเข้าเพื่อแทนที่ข้อมูลในระบบใช่หรือไม่?`)) {
+                        pushSnapshot();
+                        v78MasterData = imported;
+                        if (!v78MasterData.tierDefaults) v78MasterData.tierDefaults = [1, 2, 3, 4, 5, 6];
+                        prepareRulesIndex(v78MasterData);
+                        renderGroups();
+                        renderQueue();
+                        updateKPI();
+                        populateBulkDropdown();
+                        alert("✅ นำเข้าข้อมูลเรียบร้อยแล้ว! กรุณากดปุ่ม '💾 ตรวจสอบรายการเปลี่ยนแปลงและบันทึกขึ้น Cloud' เพื่อบันทึก");
+                    }
+                } catch (err) { alert("❌ นำเข้าไม่สำเร็จ: " + err.message); }
+                event.target.value = "";
+            };
+            reader.readAsText(file);
+        }
+
+        async function openDictionaryModal() { 
+            await loadRules(); 
+            renderDictionaryTable(); 
+            document.getElementById('dict-test-input').value = ''; 
+            document.getElementById('dict-test-result').innerText = 'ผลลัพธ์: -'; 
+            document.getElementById('dict-modal').classList.remove('hidden'); 
+        }
+        function closeDictionaryModal() { document.getElementById('dict-modal').classList.add('hidden'); }
+
+    function renderDictionaryTable() {
+            const tbody = document.getElementById('dict-table-body');
+            tbody.innerHTML = (v78MasterData.groups || []).map(g => {
+                const kwSet = new Set();
+                (v78MasterData.exactMajorRules || []).filter(r => r.group === g.key).forEach(r => kwSet.add(r.pattern));
+                (v78MasterData.exactDegreeRules || []).filter(r => r.group === g.key).forEach(r => kwSet.add(r.pattern)); // 🛡️ เพิ่มบรรทัดนี้ เพื่อให้ดึงป้ายจาก exactDegreeRules มาโชว์ด้วย
+                (v78MasterData.compoundMajorRules || []).filter(r => r.group === g.key).forEach(r => kwSet.add(r.pattern));
+                (v78MasterData.specificQualifications || []).filter(r => r.group === g.key).forEach(r => { if (r.token) kwSet.add(r.token); if (r.aliases) r.aliases.forEach(a => kwSet.add(a)); });
+                const tagsHTML = Array.from(kwSet).map(kw => `<span class="dict-tag">${escapeHTML(kw)}</span>`).join(' ') || '<span style="color:#94a3b8; font-style:italic;">ยังไม่มีคำค้น</span>';
+
+                return `
+                    <tr>
+                        <td style="font-weight:bold; color:var(--primary); width:200px;">
+                            <div style="display:flex; align-items:center; gap:6px;"><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background-color:${g.color || '#2563eb'};"></span><span>${escapeHTML(g.name)}</span></div>
+                        </td>
+                        <td><div style="line-height:1.8;">${tagsHTML}</div></td>
+                        <td style="text-align:center; width:130px;"><button class="btn-sm primary" onclick="openEditGroupKeywords('${escapeHTML(g.key)}')">✏️ จัดการคำค้น</button></td>
+                    </tr>`;
+            }).join('');
+        }
+
+        function openEditGroupKeywords(grpKey) {
+            const g = (v78MasterData.groups || []).find(item => item.key === grpKey); if (!g) return;
+            const kwSet = new Set();
+            (v78MasterData.exactMajorRules || []).filter(r => r.group === grpKey).forEach(r => kwSet.add(r.pattern));
+            (v78MasterData.compoundMajorRules || []).filter(r => r.group === grpKey).forEach(r => kwSet.add(r.pattern));
+            (v78MasterData.genericKeywords || []).filter(r => r.group === grpKey).forEach(r => kwSet.add(r.keyword));
+            document.getElementById('modal-dict-rule-id').value = grpKey;
+            document.getElementById('dict-rule-modal-title').innerText = `✏️ จัดการคำค้นกลุ่ม: ${g.name}`;
+            document.getElementById('modal-dict-aliases').value = Array.from(kwSet).join(', ');
+            document.getElementById('dict-rule-modal').classList.remove('hidden');
+        }
+
+        function closeAddDictRule() { document.getElementById('dict-rule-modal').classList.add('hidden'); }
+
+        async function saveDictRuleModal() {
+            const grpKey = document.getElementById('modal-dict-rule-id').value;
+            const rawAliases = document.getElementById('modal-dict-aliases').value;
+            const allKeywords = Array.from(new Set(rawAliases.split(',').map(a => a.trim()).filter(Boolean)));
+
+            pushSnapshot();
+            if (!v78MasterData.exactMajorRules) v78MasterData.exactMajorRules = [];
+            if (!v78MasterData.genericKeywords) v78MasterData.genericKeywords = [];
+            if (!v78MasterData.exactDegreeRules) v78MasterData.exactDegreeRules = [];
+
+            v78MasterData.exactMajorRules = v78MasterData.exactMajorRules.filter(r => r.group !== grpKey);
+            v78MasterData.genericKeywords = v78MasterData.genericKeywords.filter(r => r.group !== grpKey);
+            v78MasterData.exactDegreeRules = v78MasterData.exactDegreeRules.filter(r => r.group !== grpKey);
+
+            allKeywords.forEach(kw => {
+                if (/บัณฑิต|มหาบัณฑิต|ดุษฎีบัณฑิต|bachelor|master|doctor/i.test(kw)) v78MasterData.exactDegreeRules.push({ pattern: kw, group: grpKey });
+                else v78MasterData.exactMajorRules.push({ pattern: kw, group: grpKey });
+                v78MasterData.genericKeywords.push({ keyword: kw, group: grpKey });
+            });
+
+            closeAddDictRule();
+            prepareRulesIndex(v78MasterData);
+            renderDictionaryTable(); renderGroups(); renderQueue(); updateKPI();
+            await saveToServer(true);
+        }
+
+        function testV80EngineMatch(testText) {
+            const resEl = document.getElementById('dict-test-result');
+            if (!testText.trim()) { resEl.innerText = "ผลลัพธ์: -"; return; }
+            const res = classifyQualificationV80("ปริญญาตรีหรือเทียบเท่า", testText, testText, null, null);
+            if (res.group && res.group !== 'none' && res.group !== 'other' && res.group !== 'review') {
+                resEl.innerHTML = `ผลลัพธ์: <span style="color:#16a34a;">✅ ${escapeHTML(getGroupName(res.group))} [กฎ: ${escapeHTML(res.matchedRule)}]</span>`;
+            } else {
+                resEl.innerHTML = `ผลลัพธ์: <span style="color:#dc2626;">⚠️ ${res.status}: ${res.reason} (${res.matchedRule})</span>`;
+            }
+        }
+
+        function openReviewModal() {
+            const container = document.getElementById('review-list');
+            let diffHTML = "";
+            const origExact = originalState.exactMajorRules || [], currExact = v78MasterData.exactMajorRules || [];
+            currExact.forEach(r => {
+                const orig = origExact.find(or => normalizeField(or.pattern) === normalizeField(r.pattern));
+                if (!orig) diffHTML += `<div class="diff-row"><span class="diff-added">+ เพิ่มสาขาวิชาเอก</span> <strong>${escapeHTML(r.pattern)}</strong> ➔ ${escapeHTML(getGroupName(r.group))}</div>`;
+                else if (orig.group !== r.group) diffHTML += `<div class="diff-row"><span class="diff-modified">~ เปลี่ยนกลุ่ม</span> <strong>${escapeHTML(r.pattern)}</strong> ➔ ${escapeHTML(getGroupName(r.group))}</div>`;
+            });
+            container.innerHTML = diffHTML || "<div style='padding:20px;text-align:center;color:#64748b;'>ไม่มีการเปลี่ยนแปลงข้อมูล</div>";
+            document.getElementById('review-modal').classList.remove('hidden');
+        }
+
+        function closeReviewModal() { document.getElementById('review-modal').classList.add('hidden'); }
+
+       async function saveToServer(isSilent = false) {
+            if (!isSilent) closeReviewModal();
+            try {
+                v78MasterData.version = 80;
+                v78MasterData.lastModified = new Date().toISOString();
+                
+                // 🛡️ บังคับแนบฟิลด์ tierDefaults และ tierOverrides ส่งขึ้น Cloud ไปด้วย
+                const payloadData = {
+                    ...v78MasterData,
+                    tierDefaults: v78MasterData.tierDefaults || [1, 2, 3, 4, 5, 6],
+                    tierOverrides: v78MasterData.tierOverrides || {}
+                };
+
+                const res = await fetch(`${API_BASE}/api/saveRules`, {
+                    method: "POST", 
+                    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${authToken}` }, 
+                    body: JSON.stringify(payloadData)
+                });
+                const data = await res.json().catch(() => ({}));
+                if (res.ok && data.status === "success") { 
+                    if (!isSilent) alert("✅ บันทึกข้อมูล Master Data เรียบร้อยแล้ว!");
+                    originalState = structuredClone(v78MasterData);
+                    undoStack = []; document.getElementById('btn-undo').disabled = true;
+                }
+            } catch (e) { alert("❌ เกิดข้อผิดพลาด: " + e.message); }
+        }
+        function approvePerson(personId) {
+            pushSnapshot();
+            if (!v78MasterData.personApproved) v78MasterData.personApproved = {};
+            v78MasterData.personApproved[personId] = true;
+            
+            renderBranchPersonnelList(selectedBranch);
+            renderQueue();
+            updateKPI();
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
