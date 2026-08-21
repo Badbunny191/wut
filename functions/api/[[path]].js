@@ -131,6 +131,7 @@ const DEFAULT_V80_DATA = {
   ],
   personOverrides: {},
   tierOverrides: {},
+  tierDefaults: [1, 2, 3, 4, 5, 6],
   rules: []
 };
 
@@ -226,8 +227,13 @@ export async function onRequest(context) {
       
       let rulesDataStr = null;
       if (env && env.RULES_DB && typeof env.RULES_DB.get === "function") {
-        const currentVersion = await env.RULES_DB.get("MDM_CURRENT_VERSION") || "80";
-        rulesDataStr = await env.RULES_DB.get(`MDM_STATE_V${currentVersion}`);
+        // อ่านจาก Key ล่าสุดก่อน
+        rulesDataStr = await env.RULES_DB.get("MDM_LATEST_STATE");
+        
+        if (!rulesDataStr) {
+          const currentVersion = await env.RULES_DB.get("MDM_CURRENT_VERSION") || "80";
+          rulesDataStr = await env.RULES_DB.get(`MDM_STATE_V${currentVersion}`);
+        }
       }
       
       if (!rulesDataStr) {
@@ -247,16 +253,8 @@ export async function onRequest(context) {
         : 80;
       
       const nextVersion = currentVersion + 1;
-      const DEFAULT_V80_DATA = {
-    version: 80,
-    lastModified: "2026-08-21T07:00:00.000Z",
-    // ... (กลุ่มข้อมูลอื่นๆ เหมือนเดิม)
-    personOverrides: {},
-    tierOverrides: {},
-    tierDefaults: [1, 2, 3, 4, 5, 6], // 🛡️ เพิ่มตรงนี้ให้มีค่าตั้งต้นเสมอ
-    rules: []
-};
-     const newState = {
+
+      const newState = {
         version: nextVersion,
         lastModified: new Date().toISOString(),
         modifiedBy: authData.u,
@@ -271,17 +269,29 @@ export async function onRequest(context) {
         exclusions: payload.exclusions || DEFAULT_V80_DATA.exclusions,
         personOverrides: payload.personOverrides || {},
         tierOverrides: payload.tierOverrides || {},
-        tierDefaults: payload.tierDefaults || [1, 2, 3, 4, 5, 6], // 🛡️ เพิ่มบรรทัดนี้ เพื่อเก็บบันทึกสถานะ 10 ระดับลง KV 
+        tierDefaults: payload.tierDefaults || [1, 2, 3, 4, 5, 6],
         rules: payload.rules || []
       };
 
       if (env && env.RULES_DB && typeof env.RULES_DB.put === "function") {
-        await env.RULES_DB.put(`MDM_STATE_V${nextVersion}`, JSON.stringify(newState));
+        const stateJSON = JSON.stringify(newState);
+        // บันทึกทั้ง Version Snapshot และ Latest Key เสมอ
+        await env.RULES_DB.put(`MDM_STATE_V${nextVersion}`, stateJSON);
+        await env.RULES_DB.put("MDM_LATEST_STATE", stateJSON);
         await env.RULES_DB.put("MDM_CURRENT_VERSION", nextVersion.toString());
-        return new Response(JSON.stringify({ status: "success", message: `บันทึก Master Data สำเร็จ (v${nextVersion})`, newVersion: nextVersion }), { headers: corsHeaders });
+        
+        return new Response(JSON.stringify({ 
+          status: "success", 
+          message: `บันทึก Master Data สำเร็จ (v${nextVersion})`, 
+          newVersion: nextVersion 
+        }), { headers: corsHeaders });
       }
 
-      return new Response(JSON.stringify({ status: "success", message: "บันทึกเรียบร้อย (โหมดทดสอบ)", newVersion: nextVersion }), { headers: corsHeaders });
+      return new Response(JSON.stringify({ 
+        status: "success", 
+        message: "บันทึกเรียบร้อย (โหมดทดสอบไม่มี KV)", 
+        newVersion: nextVersion 
+      }), { headers: corsHeaders });
     }
 
     if (path === "/fetchExcel" && request.method === "POST") {
