@@ -366,7 +366,7 @@
                 </div>
                 <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:8px;">
                     <button class="btn-sm" onclick="closeAddDictRule()">ยกเลิก</button>
-                    <button class="btn-sm primary" onclick="saveDictRuleModal()">💾 บันทึกและปรับปรุงทันที</button>
+                    <button class="btn-sm primary" id="btn-save-dict" onclick="saveDictRuleModal()">💾 บันทึกและปรับปรุงทันที</button>
                 </div>
             </div>
         </div>
@@ -509,9 +509,6 @@
             return result;
         }
 
-        /**
-         * กรองคำในวงเล็บที่ไม่ใช่ชื่อสาขาวิชาจริง (คำว่าไม่ระบุ, ค่าว่าง, คำบอกประเภทโครงการ)
-         */
         function cleanAndValidateMajor(rawMajor) {
             if (!rawMajor || typeof rawMajor !== 'string') return "";
             let cleaned = normalizeField(rawMajor);
@@ -530,6 +527,38 @@
             if (programBlacklist.some(term => cleaned.includes(term))) return "";
 
             return cleaned;
+        }
+
+        function getAllGroupKeywords(grpKey) {
+            if (!grpKey || !v78MasterData) return [];
+            const kwSet = new Set();
+
+            (v78MasterData.exactMajorRules || [])
+                .filter(r => r.group === grpKey && r.pattern)
+                .forEach(r => kwSet.add(r.pattern.trim()));
+
+            (v78MasterData.exactDegreeRules || [])
+                .filter(r => r.group === grpKey && r.pattern)
+                .forEach(r => kwSet.add(r.pattern.trim()));
+
+            (v78MasterData.compoundMajorRules || [])
+                .filter(r => r.group === grpKey && r.pattern)
+                .forEach(r => kwSet.add(r.pattern.trim()));
+
+            (v78MasterData.genericKeywords || [])
+                .filter(r => r.group === grpKey && r.keyword)
+                .forEach(r => kwSet.add(r.keyword.trim()));
+
+            (v78MasterData.specificQualifications || [])
+                .filter(r => r.group === grpKey)
+                .forEach(r => {
+                    if (r.token) kwSet.add(r.token.trim());
+                    if (Array.isArray(r.aliases)) {
+                        r.aliases.forEach(a => { if (a) kwSet.add(a.trim()); });
+                    }
+                });
+
+            return Array.from(kwSet).filter(Boolean);
         }
 
         function prepareRulesIndex(src) {
@@ -611,9 +640,6 @@
             return false;
         }
 
-        /**
-         * ฟังก์ชันจัดกลุ่มคุณวุฒิ V80: Major-First Policy + Degree Fallback
-         */
         function classifyQualificationV80(lvl, rawDegree, rawMajor, personKey, rowContext) {
             const dataSrc = v78MasterData || {};
 
@@ -628,7 +654,6 @@
             const cleanM = cleanAndValidateMajor(rawMajor);
             const cleanD = normalizeField(rawDegree);
 
-            // Step 0: ตรวจสอบ Exact Major Override (ปุ่มน้ำเงิน)
             if (dataSrc.exactMajorRules) {
                 const foundExact = dataSrc.exactMajorRules.find(r => {
                     const pNorm = normalizeField(r.pattern);
@@ -651,7 +676,6 @@
             const fullText = `${cleanD} ${cleanM}`.trim();
             const candidates = [];
 
-            // 1. ตรวจสอบคุณวุฒิเฉพาะตำแหน่ง (Specific Qualifications)
             const specs = dataSrc.specificQualifications || [];
             for (let i = 0; i < specs.length; i++) {
                 const spec = specs[i];
@@ -664,7 +688,6 @@
                 }
             }
 
-            // 2. ตรวจสอบ Policy Overrides
             const policies = dataSrc.policyOverrides || [];
             for (let i = 0; i < policies.length; i++) {
                 const pol = policies[i];
@@ -674,18 +697,16 @@
                 }
             }
 
-            // 3. ตรวจสอบ Degree + Major Combo
             const combos = dataSrc.degreeMajorCombinations || [];
             for (let i = 0; i < combos.length; i++) {
                 const combo = combos[i];
                 const dNorm = combo._dNorm !== undefined ? combo._dNorm : normalizeField(combo.degreeToken);
                 const mNorm = combo._mNorm !== undefined ? combo._mNorm : normalizeField(combo.majorToken);
                 if (dNorm && mNorm && cleanD.includes(dNorm) && cleanM.includes(mNorm)) {
-                    candidates.push({ group: combo.group, tier: TIERS.COMBO, patternLength: dNorm.length + mNorm.length, matchedRule: `${combo.degreeToken} + ${combo.majorToken}`, reason: combo.reason || "COMBO", sourceField: "degree+major", confidence: 0.99, specificity: dNorm.length + mNorm.length });
+                    candidates.push({ group: combo.group, tier: TIERS.COMBO, patternLength: dNorm.length + mNorm.length, matchedRule: `${combo.degreeToken} + ${combo.majorToken}`, reason: "COMBO", sourceField: "degree+major", confidence: 0.99, specificity: dNorm.length + mNorm.length });
                 }
             }
 
-            // 4. ตรวจสอบ Major-First (ถ้ามีสาขาจริงในวงเล็บ)
             if (cleanM) {
                 const compounds = dataSrc.compoundMajorRules || [];
                 for (let i = 0; i < compounds.length; i++) {
@@ -718,7 +739,6 @@
                 }
             }
 
-            // 5. Degree Fallback (ตรวจจากชื่อปริญญาหลัก เมื่อไม่มีสาขา หรือยังจับคู่ไม่ได้)
             if (cleanD) {
                 const exactDegrees = dataSrc.exactDegreeRules || [];
                 for (let i = 0; i < exactDegrees.length; i++) {
@@ -730,7 +750,6 @@
                 }
             }
 
-            // 6. Generic Keywords Fallback
             const generics = dataSrc.genericKeywords || [];
             for (let i = 0; i < generics.length; i++) {
                 const gen = generics[i];
@@ -912,7 +931,6 @@
                         scannedRawLevelsMap.get(rawLvlKey).push({ degree: deg, major: maj, isConflict: tierEvalAudit.isConflict, reason: tierEvalAudit.reason });
                     }
 
-                    // ใช้ Major-First Key หรือ Fallback ไปที่ Degree
                     const validM = cleanAndValidateMajor(maj);
                     const cleanD = normalizeField(deg);
                     const branch = validM || cleanD;
@@ -1349,8 +1367,10 @@
             updateKPI(); 
             selectBranch(b);
 
-            await saveToServer(true); 
-            alert(`✅ บันทึกสำเร็จ! สาขา "${cleanPattern}" ผูกกับกลุ่ม "${getGroupName(grp)}" เรียบร้อย`);
+            const isSaved = await saveToServer(true); 
+            if (isSaved) {
+                alert(`✅ [KV OK] บันทึกสำเร็จ! สาขา "${cleanPattern}" ผูกกับกลุ่ม "${getGroupName(grp)}" เรียบร้อย`);
+            }
         }
 
         function unassignBranch(b) {
@@ -1908,8 +1928,7 @@
             reader.readAsText(file);
         }
 
-        async function openDictionaryModal() { 
-            await loadRules(); 
+        function openDictionaryModal() { 
             renderDictionaryTable(); 
             document.getElementById('dict-test-input').value = ''; 
             document.getElementById('dict-test-result').innerText = 'ผลลัพธ์: -'; 
@@ -1920,12 +1939,8 @@
         function renderDictionaryTable() {
             const tbody = document.getElementById('dict-table-body');
             tbody.innerHTML = (v78MasterData.groups || []).map(g => {
-                const kwSet = new Set();
-                (v78MasterData.exactMajorRules || []).filter(r => r.group === g.key).forEach(r => kwSet.add(r.pattern));
-                (v78MasterData.exactDegreeRules || []).filter(r => r.group === g.key).forEach(r => kwSet.add(r.pattern));
-                (v78MasterData.compoundMajorRules || []).filter(r => r.group === g.key).forEach(r => kwSet.add(r.pattern));
-                (v78MasterData.specificQualifications || []).filter(r => r.group === g.key).forEach(r => { if (r.token) kwSet.add(r.token); if (r.aliases) r.aliases.forEach(a => kwSet.add(a)); });
-                const tagsHTML = Array.from(kwSet).map(kw => `<span class="dict-tag">${escapeHTML(kw)}</span>`).join(' ') || '<span style="color:#94a3b8; font-style:italic;">ยังไม่มีคำค้น</span>';
+                const keywords = getAllGroupKeywords(g.key);
+                const tagsHTML = keywords.map(kw => `<span class="dict-tag">${escapeHTML(kw)}</span>`).join(' ') || '<span style="color:#94a3b8; font-style:italic;">ยังไม่มีคำค้น</span>';
 
                 return `
                     <tr>
@@ -1939,74 +1954,88 @@
         }
 
         function openEditGroupKeywords(grpKey) {
-            const g = (v78MasterData.groups || []).find(item => item.key === grpKey); if (!g) return;
-            const kwSet = new Set();
-            (v78MasterData.exactMajorRules || []).filter(r => r.group === grpKey).forEach(r => kwSet.add(r.pattern));
-            (v78MasterData.compoundMajorRules || []).filter(r => r.group === grpKey).forEach(r => kwSet.add(r.pattern));
-            (v78MasterData.genericKeywords || []).filter(r => r.group === grpKey).forEach(r => kwSet.add(r.keyword));
+            const g = (v78MasterData.groups || []).find(item => item.key === grpKey); 
+            if (!g) return;
+            
+            const allKeywords = getAllGroupKeywords(grpKey);
+            
             document.getElementById('modal-dict-rule-id').value = grpKey;
             document.getElementById('dict-rule-modal-title').innerText = `✏️ จัดการคำค้นกลุ่ม: ${g.name}`;
-            document.getElementById('modal-dict-aliases').value = Array.from(kwSet).join(', ');
+            document.getElementById('modal-dict-aliases').value = allKeywords.join(', ');
             document.getElementById('dict-rule-modal').classList.remove('hidden');
         }
 
         function closeAddDictRule() { document.getElementById('dict-rule-modal').classList.add('hidden'); }
 
         async function saveDictRuleModal() {
-    const grpKey = document.getElementById('modal-dict-rule-id').value;
-    const rawAliases = document.getElementById('modal-dict-aliases').value;
-    
-    // แยกคำ คัดกรองคำว่าง และตัดคำซ้ำ
-    const allKeywords = Array.from(new Set(
-        rawAliases.split(',')
-            .map(a => a.trim())
-            .filter(Boolean)
-    ));
+            const grpKey = document.getElementById('modal-dict-rule-id').value;
+            const rawAliases = document.getElementById('modal-dict-aliases').value;
+            const btnSave = document.getElementById('btn-save-dict');
+            
+            const allKeywords = Array.from(new Set(
+                rawAliases.split(',')
+                    .map(a => a.trim())
+                    .filter(Boolean)
+            ));
 
-    pushSnapshot();
+            if (btnSave) {
+                btnSave.disabled = true;
+                btnSave.innerText = "⏳ กำลังบันทึกลง KV...";
+            }
 
-    // 1. ตั้งค่าโครงสร้าง Array เริ่มต้น
-    if (!v78MasterData.exactMajorRules) v78MasterData.exactMajorRules = [];
-    if (!v78MasterData.genericKeywords) v78MasterData.genericKeywords = [];
-    if (!v78MasterData.exactDegreeRules) v78MasterData.exactDegreeRules = [];
-    if (!v78MasterData.compoundMajorRules) v78MasterData.compoundMajorRules = [];
-    if (!v78MasterData.specificQualifications) v78MasterData.specificQualifications = [];
+            pushSnapshot();
 
-    // 2. ล้างคำเก่าทั้งหมดของกลุ่มนี้ออกจากทุก Array
-    v78MasterData.exactMajorRules = v78MasterData.exactMajorRules.filter(r => r.group !== grpKey);
-    v78MasterData.genericKeywords = v78MasterData.genericKeywords.filter(r => r.group !== grpKey);
-    v78MasterData.exactDegreeRules = v78MasterData.exactDegreeRules.filter(r => r.group !== grpKey);
-    v78MasterData.compoundMajorRules = v78MasterData.compoundMajorRules.filter(r => r.group !== grpKey);
-    v78MasterData.specificQualifications = v78MasterData.specificQualifications.filter(r => r.group !== grpKey);
+            if (!v78MasterData.exactMajorRules) v78MasterData.exactMajorRules = [];
+            if (!v78MasterData.genericKeywords) v78MasterData.genericKeywords = [];
+            if (!v78MasterData.exactDegreeRules) v78MasterData.exactDegreeRules = [];
+            if (!v78MasterData.compoundMajorRules) v78MasterData.compoundMajorRules = [];
+            if (!v78MasterData.specificQualifications) v78MasterData.specificQualifications = [];
 
-    // 3. บันทึกคำชุดใหม่ลงหมวดหมู่ที่ถูกต้อง
-    allKeywords.forEach(kw => {
-        if (/บัณฑิต|มหาบัณฑิต|ดุษฎีบัณฑิต|bachelor|master|doctor/i.test(kw)) {
-            v78MasterData.exactDegreeRules.push({ pattern: kw, group: grpKey });
-        } else {
-            v78MasterData.exactMajorRules.push({ pattern: kw, group: grpKey });
+            v78MasterData.exactMajorRules = v78MasterData.exactMajorRules.filter(r => r.group !== grpKey);
+            v78MasterData.genericKeywords = v78MasterData.genericKeywords.filter(r => r.group !== grpKey);
+            v78MasterData.exactDegreeRules = v78MasterData.exactDegreeRules.filter(r => r.group !== grpKey);
+            v78MasterData.compoundMajorRules = v78MasterData.compoundMajorRules.filter(r => r.group !== grpKey);
+            v78MasterData.specificQualifications = v78MasterData.specificQualifications.filter(r => r.group !== grpKey);
+
+            allKeywords.forEach(kw => {
+                if (/บัณฑิต|มหาบัณฑิต|ดุษฎีบัณฑิต|bachelor|master|doctor/i.test(kw)) {
+                    v78MasterData.exactDegreeRules.push({ pattern: kw, group: grpKey });
+                } else {
+                    v78MasterData.exactMajorRules.push({ pattern: kw, group: grpKey });
+                }
+                v78MasterData.genericKeywords.push({ keyword: kw, group: grpKey });
+            });
+
+            clearBranchCache();
+            prepareRulesIndex(v78MasterData);
+
+            const isSaved = await saveToServer(true);
+
+            if (btnSave) {
+                btnSave.disabled = false;
+                btnSave.innerText = "💾 บันทึกและปรับปรุงทันที";
+            }
+
+            if (isSaved) {
+                closeAddDictRule();
+                renderDictionaryTable(); 
+                renderGroups(); 
+                renderQueue(); 
+                updateKPI();
+                alert(`✅ [KV OK] บันทึกคำค้นกลุ่ม "${getGroupName(grpKey)}" ลง Cloudflare KV สำเร็จแล้ว!`);
+            }
         }
-        v78MasterData.genericKeywords.push({ keyword: kw, group: grpKey });
-    });
 
-    // 4. ปิดหน้าต่างและล้างแคชประมวลผลทันที
-    closeAddDictRule();
-    clearBranchCache();
-    prepareRulesIndex(v78MasterData);
-
-    // 5. วาดตารางและ UI ใหม่ทันทีจาก Memory
-    renderDictionaryTable(); 
-    renderGroups(); 
-    renderQueue(); 
-    updateKPI();
-
-    // 6. ส่งขึ้น Cloud
-    try {
-        await saveToServer(true);
-    } catch (err) {
-        console.error("Save to server failed:", err);
-    }
-}
+        function testV80EngineMatch(testText) {
+            const resEl = document.getElementById('dict-test-result');
+            if (!testText.trim()) { resEl.innerText = "ผลลัพธ์: -"; return; }
+            const res = classifyQualificationV80("ปริญญาตรีหรือเทียบเท่า", testText, testText, null, null);
+            if (res.group && res.group !== 'none' && res.group !== 'other' && res.group !== 'review') {
+                resEl.innerHTML = `ผลลัพธ์: <span style="color:#16a34a;">✅ ${escapeHTML(getGroupName(res.group))} [กฎ: ${escapeHTML(res.matchedRule)}]</span>`;
+            } else {
+                resEl.innerHTML = `ผลลัพธ์: <span style="color:#dc2626;">⚠️ ${res.status}: ${res.reason} (${res.matchedRule})</span>`;
+            }
+        }
 
         function openReviewModal() {
             const container = document.getElementById('review-list');
@@ -2037,17 +2066,36 @@
 
                 const res = await fetch(`${API_BASE}/api/saveRules`, {
                     method: "POST", 
-                    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${authToken}` }, 
+                    headers: { 
+                        "Content-Type": "application/json", 
+                        "Authorization": `Bearer ${authToken}` 
+                    }, 
                     body: JSON.stringify(payloadData)
                 });
-                const data = await res.json().catch(() => ({}));
-                if (res.ok && data.status === "success") { 
-                    if (!isSilent) alert("✅ บันทึกข้อมูล Master Data เรียบร้อยแล้ว!");
-                    originalState = structuredClone(v78MasterData);
-                    undoStack = []; document.getElementById('btn-undo').disabled = true;
+
+                if (!res.ok) {
+                    throw new Error(`HTTP Error ${res.status}: ${res.statusText}`);
                 }
-            } catch (e) { alert("❌ เกิดข้อผิดพลาด: " + e.message); }
-            
+
+                const data = await res.json().catch(() => ({}));
+                
+                if (data.status === "success" || data.success === true || res.ok) { 
+                    originalState = structuredClone(v78MasterData);
+                    undoStack = []; 
+                    document.getElementById('btn-undo').disabled = true;
+
+                    if (!isSilent) {
+                        alert("✅ [KV Status: SUCCESS] บันทึกข้อมูล Master Data ลง Cloudflare KV เรียบร้อยแล้ว!");
+                    }
+                    return true;
+                } else {
+                    throw new Error(data.message || "KV ตอบกลับสถานะไม่สำเร็จ");
+                }
+            } catch (e) { 
+                alert("🚨 [KV Status: FAILED] บันทึกลง Cloud ไม่สำเร็จ!\nสาเหตุ: " + e.message); 
+                console.error("Save to KV Error:", e);
+                return false;
+            }
         }
 
         function approvePerson(personId) {
