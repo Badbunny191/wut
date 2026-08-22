@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ระบบวิเคราะห์โครงสร้างคุณวุฒิ สตง.</title>
+    <!-- เรียกใช้ Core Engine ตัวกลางตัวเดียว -->
     <script src="classifier.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
@@ -195,19 +196,6 @@
     let rawDataGlobal = []; 
     let baseCols = ['ชื่อ-นามสกุล', 'เพศ', 'เลขที่ตำแหน่ง', 'ตำแหน่งในสายงาน', 'ระดับตำแหน่ง', 'ตำแหน่งทางการบริหาร', 'สำนัก/กอง'];
     
-    const STANDARD_TIERS_DEF = [
-        { id: 1, name: "ปริญญาเอกหรือเทียบเท่า", defaultChecked: true, regex: /ปริญญาเอก|ป\.เอก|ดุษฎี|doctor|ph\.?d|dba/i },
-        { id: 2, name: "ปริญญาโทหรือเทียบเท่า", defaultChecked: true, regex: /ปริญญาโท|ป\.โท|มหาบัณฑิต|master|mba|ll\.?m|mpa|m\.?sc|m\.?a\b/i },
-        { id: 3, name: "ประกาศนียบัตรชั้นสูง (สูงกว่าปริญญาตรี/ต่ำกว่าปริญญาโท)", defaultChecked: true, regex: /^(?=.*(?:ประกาศนียบัตรบัณฑิต|ป\.บัณฑิต|สูงกว่าปริญญาตรี|postgraduate|ปรม|วิชาชีพครู))(?!.*(?:ปวช|ปวส|ประกาศนียบัตรวิชาชีพ))/i },
-        { id: 4, name: "ปริญญาตรีหรือเทียบเท่า", defaultChecked: true, regex: /ปริญญาตรี|ป\.ตรี|บัณฑิต|bachelor|b\.?a\b|b\.?s\b|b\.?b\.?a|ll\.?b|ปทส/i },
-        { id: 5, name: "วุฒิอื่น ๆ เป็นกลุ่มที่หน่วยงานผลิตมาเพื่อใช้เฉพาะตำแหน่ง", defaultChecked: true, regex: /เนติ|ว่าความ|ทนาย|ก\.ศป|กศป|ศาลปกครอง|วุฒิบัตร|ใบอนุญาต|เฉพาะตำแหน่ง|วุฒิอื่น/i },
-        { id: 6, name: "ทักษะประสบการณ์ที่ใช้แทนวุฒิการศึกษา", defaultChecked: true, regex: /ทักษะ|ประสบการณ์|แทนวุฒิ/i },
-        { id: 7, name: "ปวส. หรือเทียบเท่า / อนุปริญญา / ปวท.", defaultChecked: false, regex: /ปวส|ปวท|อนุปริญญา|วิชาชีพชั้นสูง|วิชาชีพเทคนิค/i },
-        { id: 8, name: "ปวช. หรือเทียบเท่า", defaultChecked: false, regex: /(?<!ต่ำกว่า\s*)ปวช|(?<!ต่ำกว่า\s*)ประกาศนียบัตรวิชาชีพ(?!ชั้นสูง)/i },
-        { id: 9, name: "มัธยมศึกษา (รวม ม.ต้น, ม.ปลาย, สอบเทียบ)", defaultChecked: false, regex: /มัธยม|ม\.[1-6]|ม\.ศ\.|มศ\.|ต่ำกว่าประกาศนียบัตรวิชาชีพ|ต่ำกว่า\s*ปวช/i },
-        { id: 10, name: "ประถมศึกษา (รวม ป.1-6, ป.3, ป.4, ใบสุทธิ)", defaultChecked: false, regex: /ประถม|ป\.[1-7]|ใบสุทธิ|อนุบาล/i }
-    ];
-
     let selectedTierIds = new Set([1, 2, 3, 4, 5, 6]);
     let selectedDepts = new Set(), selectedRanks = new Set();
     let defaultDeptsGlobal = [], defaultRanksGlobal = [];
@@ -219,123 +207,14 @@
     let activeDrilldownTitle = "";
     let currentDrilldownExportData = [];
 
-    const normCache = new Map();
-    const classCache = new Map();
-
-    const SYSTEM_GROUPS = [
-        { key: "other", name: "📝 ปริญญาสาขาอื่นๆ / วุฒิอื่นๆ", color: "#6b7280" }
-    ];
-
-    const PROFESSIONAL_GROUPS = new Set(["acc", "law", "eco", "comp", "stat", "eng", "health"]);
-
-    const TIERS = {
-        PERSON: 10000,
-        BASIC: 9500,
-        SPECIFIC: 9000,
-        EXACT_FULL_MAJOR: 8500,
-        POLICY: 8000,
-        COMBO: 7000,
-        PROFESSIONAL_MAJOR: 6500,
-        EXACT_DEGREE: 6000,
-        EXACT_MAJOR: 5000,
-        COMPOUND: 4000,
-        GENERIC: 3000
-    };
-
     function escapeHTML(value) {
         return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
-    }
-
-    function normalizeField(text) {
-        if (!text) return "";
-        if (normCache.has(text)) return normCache.get(text);
-
-        let s = String(text).normalize("NFC").toLowerCase().trim().replace(/\s+/g, " ");
-        s = s.replace(/\s*\(เกียรตินิยมอันดับ\s*(หนึ่ง|สอง|1|2)\)\s*/g, " ");
-        s = s.replace(/\s*\(เกียรตินิยม\)\s*/g, " ");
-        s = s.replace(/^(กลุ่มนิติศาสตร์|กลุ่มบริหารธุรกิจ|กลุ่มเศรษฐศาสตร์|กลุ่มรัฐศาสตร์|กลุ่มการบัญชี|กลุ่มวิทยาศาสตร์|กลุ่มพาณิชยศาสตร์|กลุ่ม)(ไม่ระบุวิชาเอก|ไม่ระบุสาขาวิชาเอก)?\s*/g, "");
-        s = s.replace(/^(สาขาวิชาเอก|สาขาวิชา|สาขา|วิชาเอก|แผนกวิชา|แผนก)\s*/g, "");
-        
-        if (/ไม่ระบุ|อื่นๆ|อื่น ๆ/i.test(s) && /วิชาเอก|สาขา/i.test(s)) s = "";
-        
-        const emptyValues = new Set(["", "-", "ไม่ระบุ", "ไม่ระบุวิชาเอก", "อื่นๆ", "อื่น ๆ", "อื่นๆ ไม่ระบุวิชาเอก", "ไม่ระบุสาขาวิชาเอก", "บริหารไม่ระบุวิชาเอก", "บริหารธุรกิจไม่ระบุวิชาเอก"]);
-        const result = emptyValues.has(s) ? "" : s.trim();
-        normCache.set(text, result);
-        return result;
-    }
-
-    function prepareRulesIndex(src) {
-        if (!src) return;
-        (src.specificQualifications || []).forEach(spec => {
-            spec._tokensNorm = [spec.token, ...(spec.aliases || [])].filter(Boolean).map(t => normalizeField(t));
-        });
-        (src.policyOverrides || []).forEach(pol => { pol._norm = normalizeField(pol.pattern); });
-        (src.degreeMajorCombinations || []).forEach(combo => {
-            combo._dNorm = normalizeField(combo.degreeToken);
-            combo._mNorm = normalizeField(combo.majorToken);
-        });
-        (src.compoundMajorRules || []).forEach(comp => { comp._norm = normalizeField(comp.pattern); });
-        (src.exactMajorRules || []).forEach(em => { em._norm = normalizeField(em.pattern); });
-        (src.exactDegreeRules || []).forEach(ed => { ed._norm = normalizeField(ed.pattern); });
-        (src.genericKeywords || []).forEach(gen => { gen._norm = normalizeField(gen.keyword); });
-
-        src._exclusionsNorm = {};
-        if (src.exclusions) {
-            Object.entries(src.exclusions).forEach(([grp, arr]) => {
-                src._exclusionsNorm[grp] = (arr || []).map(x => normalizeField(x));
-            });
-        }
-        classCache.clear();
     }
 
     function getGroupName(key) {
         const g = (rulesDataGlobal.groups || []).find(grp => grp.key === key) || SYSTEM_GROUPS.find(grp => grp.key === key);
         return g ? g.name : "📝 ปริญญาสาขาอื่นๆ / วุฒิอื่นๆ";
     }
-
-    function classifyEducationTier(lvl, rawDegree = "") {
-        const cleanLvl = (lvl || "").trim();
-        const cleanDeg = (rawDegree || "").trim();
-        if (!cleanLvl && !cleanDeg) return STANDARD_TIERS_DEF.find(t => t.id === 10);
-
-        if (rulesDataGlobal.tierOverrides && rulesDataGlobal.tierOverrides[cleanLvl]) {
-            const target = STANDARD_TIERS_DEF.find(t => t.id === rulesDataGlobal.tierOverrides[cleanLvl]);
-            if (target) return target;
-        }
-
-        const fullText = `${cleanLvl} ${cleanDeg}`.trim();
-        const evaluationPriority = [3, 1, 2, 5, 6, 4, 10, 9, 8, 7];
-
-        for (const tierId of evaluationPriority) {
-            const tier = STANDARD_TIERS_DEF.find(t => t.id === tierId);
-            if (tier && tier.regex.test(fullText)) return tier;
-        }
-        return STANDARD_TIERS_DEF.find(t => t.id === 10);
-    }
-
-    function getTierScore(tierId) {
-        if (tierId === 1) return 4.0;
-        if (tierId === 2) return 3.0;
-        if (tierId === 3) return 2.5;
-        if (tierId === 4) return 2.0;
-        if (tierId === 5) return 2.0;
-        if (tierId === 6) return 1.5;
-        if (tierId === 7) return 1.5;
-        if (tierId === 8) return 1.2;
-        if (tierId >= 9) return 1.0;
-        return 0;
-    }
-
-    function isGroupExcluded(text, groupKey, dataSrc) {
-        const exList = dataSrc._exclusionsNorm?.[groupKey] || dataSrc.exclusions?.[groupKey];
-        if (!exList || exList.length === 0) return false;
-        for (let i = 0; i < exList.length; i++) {
-            if (text.includes(exList[i])) return true;
-        }
-        return false;
-    }
-
-    
 
     function getCleanDegreeText(row) {
         if (!row) return ""; 
