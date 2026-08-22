@@ -640,7 +640,7 @@
             return false;
         }
 
-           function classifyQualificationV80(lvl, rawDegree, rawMajor, personKey, rowContext) {
+        function classifyQualificationV80(lvl, rawDegree, rawMajor, personKey, rowContext) {
     const dataSrc = v78MasterData || {};
 
     // 0.1 ตรวจสอบกรณีได้รับการอนุมัติรายคน (Manual Approve)
@@ -691,12 +691,26 @@
     const tier = classifyEducationTier(lvl, rawDegree);
     const activeDefaults = new Set(v78MasterData.tierDefaults || [1, 2, 3, 4, 5, 6]);
 
-    // ตัดการศึกษาขั้นพื้นฐานที่ไม่อยู่ในกลุ่ม Default ออก (ยกเว้น Tier 3 และ Tier 5 ที่ต้องเก็บไว้เสมอ)
+    // ตัดการศึกษาขั้นพื้นฐานที่ไม่อยู่ในกลุ่ม Default ออก
     if (!activeDefaults.has(tier.id) && tier.id !== 3 && tier.id !== 5) {
         return { group: "none", status: "BASIC_EDU", reason: "BELOW_BACHELOR_EXCLUDE" };
     }
 
-    // แคชผลการวิเคราะห์
+    // 🛡️ 0.5 [สำคัญมาก] บังคับให้ Tier 3 (ป.บัณฑิต / ประกาศนียบัตรชั้นสูง) และ Tier 5 เข้ากลุ่ม spec ทันที
+    // ป้องกันไม่ให้คำว่า "การจัดการ" ในสาขาวิชาเอกแย่งไปเข้าสายบริหารธุรกิจ
+    if (tier.id === 3 || tier.id === 5) {
+        return { 
+            group: "spec", 
+            status: "AUTO", 
+            reason: "POSTGRAD_CERT_OVERRIDE", 
+            matchedRule: tier.name, 
+            sourceField: "level", 
+            confidence: 1.0, 
+            specificity: 9500 
+        };
+    }
+
+    // แคชผลการวิเคราะห์เพื่อความเร็ว
     const memoKey = `${lvl}|${cleanD}|${cleanM}`;
     if (classCache.has(memoKey)) return classCache.get(memoKey);
 
@@ -864,23 +878,8 @@
         }
     }
 
-    // 7. สรุปผลการจับคู่
+    // 7. สรุปผลกรณีไม่มีกฎใดเข้าเงื่อนไขเลย
     if (candidates.length === 0) {
-        // หากเป็น Tier 3 (ป.บัณฑิต/ประกาศนียบัตรชั้นสูง) หรือ Tier 5 แล้วไม่มีคีย์เวิร์ดใดๆ ให้เข้ากลุ่ม "spec" ทันที
-        if (tier.id === 3 || tier.id === 5) {
-            const res = { 
-                group: "spec", 
-                status: "AUTO", 
-                reason: "POSTGRAD_CERT_DEFAULT", 
-                matchedRule: tier.name, 
-                sourceField: "level", 
-                confidence: 0.85, 
-                specificity: 100 
-            };
-            classCache.set(memoKey, res);
-            return res;
-        }
-
         const res = { 
             group: "other", 
             status: "UNKNOWN", 
