@@ -292,7 +292,7 @@
         return g ? g.name : "📝 ปริญญาสาขาอื่นๆ / วุฒิอื่นๆ";
     }
 
-   function classifyEducationTier(lvl, rawDegree = "") {
+    function classifyEducationTier(lvl, rawDegree = "") {
         const cleanLvl = (lvl || "").trim();
         const cleanDeg = (rawDegree || "").trim();
         if (!cleanLvl && !cleanDeg) return STANDARD_TIERS_DEF.find(t => t.id === 10);
@@ -303,7 +303,6 @@
         }
 
         const fullText = `${cleanLvl} ${cleanDeg}`.trim();
-        // 🛡️ ปรับลำดับการเช็ก เอา Tier เจาะจงเฉพาะทางขึ้นก่อน แล้วค่อยมาเช็ก Tier ทั่วไป/พื้นฐานด้านล่าง
         const evaluationPriority = [3, 1, 2, 5, 6, 4, 10, 9, 8, 7];
 
         for (const tierId of evaluationPriority) {
@@ -336,8 +335,19 @@
     }
 
     function classifyQualificationV80(lvl, rawDegree, rawMajor, personKey, rowContext) {
-        const dataSrc = rulesDataGlobal.groups ? rulesDataGlobal : v78MasterData;
+        const dataSrc = rulesDataGlobal.groups ? rulesDataGlobal : {};
 
+        // 0.1 ตรวจสอบกรณีได้รับการอนุมัติรายคน (Manual Approve)
+        if (dataSrc.personApproved && dataSrc.personApproved[personKey]) {
+            return { 
+                group: "approved", 
+                status: "APPROVED", 
+                reason: "MANUAL_APPROVE", 
+                specificity: 99999 
+            };
+        }
+
+        // 0.2 ตรวจสอบกรณีมีการโยกย้ายกลุ่มรายคน (Person Override)
         if (personKey && dataSrc.personOverrides) {
             const pk = String(personKey).split('_');
             const pos = rowContext ? (rowContext['เลขที่ตำแหน่ง'] || rowContext.pos) : (pk[0] || '');
@@ -351,16 +361,57 @@
             }
         }
 
+        const cleanM = normalizeField(rawMajor);
+        const cleanD = normalizeField(rawDegree);
+
+        // 0.3 ตรวจสอบ Exact Major / Exact Degree Rules ที่กดบันทึกโดยตรง
+        if (dataSrc.exactMajorRules) {
+            const foundExact = dataSrc.exactMajorRules.find(r => {
+                const pNorm = normalizeField(r.pattern);
+                return (cleanM && pNorm === cleanM) || (!cleanM && cleanD && pNorm === cleanD);
+            });
+            if (foundExact) {
+                return { 
+                    group: foundExact.group, 
+                    status: "AUTO", 
+                    reason: cleanM ? "EXACT_MAJOR" : "EXACT_DEGREE", 
+                    matchedRule: foundExact.pattern, 
+                    sourceField: cleanM ? "major" : "degree", 
+                    confidence: 1.0, 
+                    specificity: 9999 
+                };
+            }
+        }
+
+        // 0.4 ตรวจสอบระดับการศึกษา (Tier Evaluation)
+        const tierObj = classifyEducationTier(lvl, rawDegree);
+        const activeDefaults = new Set(dataSrc.tierDefaults || [1, 2, 3, 4, 5, 6]);
+
+        // ตัดการศึกษาขั้นพื้นฐานที่ไม่อยู่ในกลุ่ม Default ออก
+        if (!activeDefaults.has(tierObj.id) && tierObj.id !== 3 && tierObj.id !== 5) {
+            return { group: "none", status: "BASIC_EDU", reason: "BELOW_BACHELOR_EXCLUDE" };
+        }
+
+        // 🛡️ 0.5 [สำคัญมาก] บังคับให้ Tier 3 (ป.บัณฑิต / ประกาศนียบัตรชั้นสูง) และ Tier 5 เข้ากลุ่ม spec ทันที
+        if (tierObj.id === 3 || tierObj.id === 5) {
+            return { 
+                group: "spec", 
+                status: "AUTO", 
+                reason: "POSTGRAD_CERT_OVERRIDE", 
+                matchedRule: tierObj.name, 
+                sourceField: "level", 
+                confidence: 1.0, 
+                specificity: 9500 
+            };
+        }
+
         const memoKey = `${lvl}|${rawDegree}|${rawMajor}`;
         if (classCache.has(memoKey)) return classCache.get(memoKey);
 
-        const tierObj = classifyEducationTier(lvl, rawDegree);
-        const cleanD = normalizeField(rawDegree);
-        const cleanM = normalizeField(rawMajor);
         const fullText = `${cleanD} ${cleanM}`.trim();
         const candidates = [];
 
-        // 1. SPECIFIC
+        // 1. ตรวจสอบคุณวุฒิเฉพาะตำแหน่ง (Specific Qualifications)
         const specs = dataSrc.specificQualifications || [];
         for (let i = 0; i < specs.length; i++) {
             const spec = specs[i];
@@ -373,7 +424,7 @@
             }
         }
 
-        // 2. POLICY
+        // 2. ตรวจสอบกฎเชิงนโยบาย (Policy Overrides)
         const policies = dataSrc.policyOverrides || [];
         for (let i = 0; i < policies.length; i++) {
             const pol = policies[i];
@@ -383,7 +434,7 @@
             }
         }
 
-        // 3. COMBO
+        // 3. ตรวจสอบ Degree + Major Combinations
         const combos = dataSrc.degreeMajorCombinations || [];
         for (let i = 0; i < combos.length; i++) {
             const combo = combos[i];
@@ -394,7 +445,7 @@
             }
         }
 
-        // 4. COMPOUND
+        // 4. Major-First Priority: ตรวจจากสาขาวิชาเอกก่อน
         if (cleanM) {
             const compounds = dataSrc.compoundMajorRules || [];
             for (let i = 0; i < compounds.length; i++) {
@@ -405,10 +456,7 @@
                     candidates.push({ group: comp.group, tier: isProf ? TIERS.PROFESSIONAL_MAJOR : TIERS.COMPOUND, patternLength: pNorm.length, matchedRule: comp.pattern, reason: "COMPOUND_MAJOR", confidence: 0.96, specificity: (Number(comp.specificity) || pNorm.length) + (isProf ? 500 : 0) });
                 }
             }
-        }
 
-        // 5. EXACT MAJOR (Full Match Priority Fix)
-        if (cleanM) {
             const exactMajors = dataSrc.exactMajorRules || [];
             for (let i = 0; i < exactMajors.length; i++) {
                 const em = exactMajors[i];
@@ -429,7 +477,7 @@
             }
         }
 
-        // 6. EXACT DEGREE
+        // 5. Degree Fallback: ตรวจสอบจากชื่อวุฒิแม่ด้านหน้าเมื่อสาขาไม่พบกฎตรง
         if (cleanD) {
             const exactDegrees = dataSrc.exactDegreeRules || [];
             for (let i = 0; i < exactDegrees.length; i++) {
@@ -441,15 +489,20 @@
             }
         }
 
-        // 7. GENERIC
+        // 6. Generic Keywords Fallback: กวาดดูคีย์เวิร์ดทั่วไปทั้งในสาขาและวุฒิ
         const generics = dataSrc.genericKeywords || [];
         for (let i = 0; i < generics.length; i++) {
             const gen = generics[i];
             const kNorm = gen._norm !== undefined ? gen._norm : normalizeField(gen.keyword);
             if (!kNorm) continue;
-            const matched = (cleanM && cleanM.includes(kNorm)) || (!cleanM && cleanD && cleanD.includes(kNorm));
-            if (matched && !isGroupExcluded(cleanM || cleanD, gen.group, dataSrc)) {
-                candidates.push({ group: gen.group, tier: TIERS.GENERIC, patternLength: kNorm.length, matchedRule: gen.keyword, reason: "GENERIC", confidence: 0.70, specificity: kNorm.length });
+            
+            const matchInMajor = cleanM && cleanM.includes(kNorm);
+            const matchInDegree = cleanD && cleanD.includes(kNorm);
+
+            if (matchInMajor && !isGroupExcluded(cleanM, gen.group, dataSrc)) {
+                candidates.push({ group: gen.group, tier: TIERS.GENERIC, patternLength: kNorm.length, matchedRule: gen.keyword, reason: "GENERIC_MAJOR", confidence: 0.75, specificity: kNorm.length });
+            } else if (matchInDegree && !isGroupExcluded(cleanD, gen.group, dataSrc)) {
+                candidates.push({ group: gen.group, tier: TIERS.GENERIC - 500, patternLength: kNorm.length, matchedRule: gen.keyword, reason: "GENERIC_DEGREE", confidence: 0.70, specificity: kNorm.length });
             }
         }
 
@@ -577,8 +630,6 @@
             const p = precalculatedPeople[i];
             const matchDept = selectedDepts.size === 0 || selectedDepts.has((p.base['สำนัก/กอง'] || '').trim());
             const matchRank = selectedRanks.size === 0 || selectedRanks.has((p.base['ระดับตำแหน่ง'] || '').trim());
-            
-            // 🛡️ เช็กว่าบุคคลนี้มีวุฒิที่ตรงกับระดับการศึกษาที่ติ๊กเลือกไว้ใน Sidebar หรือไม่
             const matchEdu = selectedTierIds.size === 0 || p.degreeRows.some(deg => selectedTierIds.has(deg.tier.id));
             const matchKw = !keyword || p.searchText.includes(keyword);
 
@@ -611,7 +662,6 @@
             const rowData = [i + 1];
             for (let j = 0; j < baseCols.length; j++) rowData.push(p.base[baseCols[j]] !== undefined ? p.base[baseCols[j]] : "");
 
-            // 🛡️ กรองเฉพาะแถววุฒิที่ตรงกับ Tier ที่ติ๊กเลือกใช้งานอยู่จริง
             let pool = p.degreeRows.map(d => d.rowRef).filter(r => selectedTierIds.size === 0 || selectedTierIds.has(r._tier.id));
 
             let entryIdx = pool.findIndex(r => String(r['วุฒิที่ใช้บรรจุ']).trim() === '1');
@@ -730,7 +780,6 @@
     
     function closeDrilldown(e) { if(e.target.id === 'modal-container') document.getElementById('modal-container').classList.add('hidden'); }
 
-    // 📥 ดาวน์โหลด Excel เฉพาะกลุ่ม (โครงสร้าง 5 คอลัมน์ตรงตาม Modal เป๊ะ)
     async function generateModalGroupExcel() {
         if (!currentDrilldownExportData || currentDrilldownExportData.length === 0) {
             alert("ไม่พบข้อมูลสำหรับส่งออก Excel"); return;
