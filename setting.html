@@ -640,7 +640,7 @@
             return false;
         }
 
-        function classifyQualificationV80(lvl, rawDegree, rawMajor, personKey, rowContext) {
+       function classifyQualificationV80(lvl, rawDegree, rawMajor, personKey, rowContext) {
             const dataSrc = v78MasterData || {};
 
             if (v78MasterData.personApproved && v78MasterData.personApproved[personKey]) {
@@ -654,6 +654,7 @@
             const cleanM = cleanAndValidateMajor(rawMajor);
             const cleanD = normalizeField(rawDegree);
 
+            // Step 0: ตรวจสอบ Exact Overrides (ปุ่มน้ำเงิน)
             if (dataSrc.exactMajorRules) {
                 const foundExact = dataSrc.exactMajorRules.find(r => {
                     const pNorm = normalizeField(r.pattern);
@@ -676,6 +677,7 @@
             const fullText = `${cleanD} ${cleanM}`.trim();
             const candidates = [];
 
+            // 1. ตรวจสอบคุณวุฒิเฉพาะตำแหน่ง
             const specs = dataSrc.specificQualifications || [];
             for (let i = 0; i < specs.length; i++) {
                 const spec = specs[i];
@@ -688,6 +690,7 @@
                 }
             }
 
+            // 2. ตรวจสอบ Policy Overrides
             const policies = dataSrc.policyOverrides || [];
             for (let i = 0; i < policies.length; i++) {
                 const pol = policies[i];
@@ -697,16 +700,18 @@
                 }
             }
 
+            // 3. ตรวจสอบ Degree + Major Combo
             const combos = dataSrc.degreeMajorCombinations || [];
             for (let i = 0; i < combos.length; i++) {
                 const combo = combos[i];
                 const dNorm = combo._dNorm !== undefined ? combo._dNorm : normalizeField(combo.degreeToken);
                 const mNorm = combo._mNorm !== undefined ? combo._mNorm : normalizeField(combo.majorToken);
                 if (dNorm && mNorm && cleanD.includes(dNorm) && cleanM.includes(mNorm)) {
-                    candidates.push({ group: combo.group, tier: TIERS.COMBO, patternLength: dNorm.length + mNorm.length, matchedRule: `${combo.degreeToken} + ${combo.majorToken}`, reason: "COMBO", sourceField: "degree+major", confidence: 0.99, specificity: dNorm.length + mNorm.length });
+                    candidates.push({ group: combo.group, tier: TIERS.COMBO, patternLength: dNorm.length + mNorm.length, matchedRule: `${combo.degreeToken} + ${combo.majorToken}`, reason: combo.reason || "COMBO", sourceField: "degree+major", confidence: 0.99, specificity: dNorm.length + mNorm.length });
                 }
             }
 
+            // 4. ตรวจสอบจากชื่อสาขาวิชาเอกก่อน (Major-First)
             if (cleanM) {
                 const compounds = dataSrc.compoundMajorRules || [];
                 for (let i = 0; i < compounds.length; i++) {
@@ -739,6 +744,7 @@
                 }
             }
 
+            // 5. Degree Fallback: ถ้าชื่อสาขาไม่มีกฎดักจับ ให้มาตรวจจากชื่อวุฒิหลักด้านหน้าทันที!
             if (cleanD) {
                 const exactDegrees = dataSrc.exactDegreeRules || [];
                 for (let i = 0; i < exactDegrees.length; i++) {
@@ -750,14 +756,21 @@
                 }
             }
 
+            // 6. Generic Keywords Fallback: กวาดดูคีย์เวิร์ดทั้งในสาขาและในวุฒิ
             const generics = dataSrc.genericKeywords || [];
             for (let i = 0; i < generics.length; i++) {
                 const gen = generics[i];
                 const kNorm = gen._norm !== undefined ? gen._norm : normalizeField(gen.keyword);
                 if (!kNorm) continue;
-                const matched = (cleanM && cleanM.includes(kNorm)) || (!cleanM && cleanD && cleanD.includes(kNorm));
-                if (matched && !isGroupExcluded(cleanM || cleanD, gen.group)) {
-                    candidates.push({ group: gen.group, tier: TIERS.GENERIC, patternLength: kNorm.length, matchedRule: gen.keyword, reason: "GENERIC", sourceField: cleanM ? "major" : "degree", confidence: 0.70, specificity: kNorm.length });
+                
+                // แก้จุดนี้: ตรวจทั้งในสาขา (ถ้ามี) หรือตรวจในชื่อวุฒิ
+                const matchInMajor = cleanM && cleanM.includes(kNorm);
+                const matchInDegree = cleanD && cleanD.includes(kNorm);
+
+                if (matchInMajor && !isGroupExcluded(cleanM, gen.group)) {
+                    candidates.push({ group: gen.group, tier: TIERS.GENERIC, patternLength: kNorm.length, matchedRule: gen.keyword, reason: "GENERIC_MAJOR", sourceField: "major", confidence: 0.75, specificity: kNorm.length });
+                } else if (matchInDegree && !isGroupExcluded(cleanD, gen.group)) {
+                    candidates.push({ group: gen.group, tier: TIERS.GENERIC - 500, patternLength: kNorm.length, matchedRule: gen.keyword, reason: "GENERIC_DEGREE", sourceField: "degree", confidence: 0.70, specificity: kNorm.length });
                 }
             }
 
@@ -788,7 +801,6 @@
             classCache.set(memoKey, res);
             return res;
         }
-
         function getBranchResolutionStatus(b) {
             if (!b) return { isResolved: false, isSplit: false, total: 0, pending: 0, resolved: 0, groupCounts: {}, distinctGroups: 0, hasOverride: false, isReview: false };
             if (branchStatusCache.has(b)) return branchStatusCache.get(b);
