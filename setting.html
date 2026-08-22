@@ -1207,49 +1207,44 @@
             const g = (v78MasterData.groups || []).find(grp => grp.key === key); 
             return g ? g.name : key; 
         }
-
-        function openAuditMatrixModal() {
+function openAuditMatrixModal() {
             const tbody = document.getElementById('audit-matrix-tbody');
             tbody.innerHTML = '';
 
             const groupStats = {};
-            (v78MasterData.groups || []).forEach(g => { groupStats[g.key] = { name: g.name, branches: 0, persons: 0, color: g.color }; });
-            groupStats['other'] = { name: '📝 ปริญญาสาขาอื่นๆ / วุฒิอื่นๆ', branches: 0, persons: 0, color: '#6b7280' };
+            (v78MasterData.groups || []).forEach(g => { 
+                groupStats[g.key] = { name: g.name, branches: new Set(), personSet: new Set(), color: g.color }; 
+            });
+            groupStats['other'] = { name: '📝 ปริญญาสาขาอื่นๆ / วุฒิอื่นๆ', branches: new Set(), personSet: new Set(), color: '#6b7280' };
 
-            let totalCompetencyCount = 0;
             let totalBranchesSet = new Set();
             let uniquePersonIds = new Set();
 
             branchDataMap.forEach((rec, b) => {
                 totalBranchesSet.add(b);
-                const status = getBranchResolutionStatus(b);
-                
-                [...rec.normalItems, ...rec.miskeyItems].forEach(p => uniquePersonIds.add(p.pos ? `${p.pos}_${p.name}` : p.id));
+                const allPeople = [...rec.normalItems, ...rec.miskeyItems];
 
-                let branchGroupMapped = false;
-                Object.entries(status.groupCounts).forEach(([gKey, count]) => {
-                    if (groupStats[gKey]) {
-                        groupStats[gKey].branches += 1;
-                        groupStats[gKey].persons += count;
-                        totalCompetencyCount += count;
-                        branchGroupMapped = true;
-                    }
+                allPeople.forEach(p => {
+                    const pKey = p.pos ? `${p.pos}_${p.name}` : p.id;
+                    uniquePersonIds.add(pKey);
+
+                    const pClass = classifyQualificationV80(p.level, p.degree, p.major, p.id, p);
+                    const targetKey = (pClass.group && pClass.group !== 'none' && pClass.group !== 'review' && groupStats[pClass.group]) 
+                        ? pClass.group 
+                        : 'other';
+
+                    groupStats[targetKey].branches.add(b);
+                    groupStats[targetKey].personSet.add(pKey);
                 });
-
-                if (status.pending > 0) {
-                    if (!branchGroupMapped) groupStats['other'].branches += 1;
-                    groupStats['other'].persons += status.pending;
-                    totalCompetencyCount += status.pending;
-                }
             });
 
             let html = '';
             let idx = 1;
-            let totalPersonsSum = 0;
+            const totalUniquePeople = uniquePersonIds.size;
 
             Object.entries(groupStats).forEach(([gKey, stat]) => {
-                totalPersonsSum += stat.persons;
-                const pct = totalCompetencyCount > 0 ? ((stat.persons / totalCompetencyCount) * 100).toFixed(1) : '0.0';
+                const pCount = stat.personSet.size;
+                const pct = totalUniquePeople > 0 ? ((pCount / totalUniquePeople) * 100).toFixed(1) : '0.0';
                 html += `
                     <tr>
                         <td style="text-align:center;">${idx++}</td>
@@ -1257,8 +1252,8 @@
                             <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${stat.color || '#2563eb'}; margin-right:6px;"></span>
                             ${escapeHTML(stat.name)}
                         </td>
-                        <td style="text-align:center;">${stat.branches} สาขา</td>
-                        <td style="text-align:center; font-weight:bold;">${stat.persons.toLocaleString()} คน</td>
+                        <td style="text-align:center;">${stat.branches.size} สาขา</td>
+                        <td style="text-align:center; font-weight:bold;">${pCount.toLocaleString()} คน</td>
                         <td style="text-align:center; color:#0369a1; font-weight:bold;">${pct}%</td>
                     </tr>`;
             });
@@ -1266,13 +1261,10 @@
             html += `
                 <tr style="background:#f1f5f9; border-top:2px solid var(--primary); font-weight:bold;">
                     <td style="text-align:center;">-</td>
-                    <td style="color:var(--primary); font-size:13px;">📊 รวมทั้งสิ้น (Grand Total)</td>
+                    <td style="color:var(--primary); font-size:13px;">📊 บุคลากรทั้งหมดที่กรองได้ (Unique People)</td>
                     <td style="text-align:center; color:var(--primary);">${totalBranchesSet.size} สาขา</td>
-                    <td style="text-align:center; color:var(--primary); font-size:12px;">
-                        ${totalPersonsSum.toLocaleString()} รายการ<br>
-                        <span style="font-size:10.5px; color:#64748b; font-weight:normal;">(จากบุคลากรจริง ${uniquePersonIds.size.toLocaleString()} คน)</span>
-                    </td>
-                    <td style="text-align:center; color:#16a34a; font-size:13px;">100.0% <span style="font-size:10px;">✅ ครบถ้วน</span></td>
+                    <td style="text-align:center; color:var(--primary); font-size:13px;">${totalUniquePeople.toLocaleString()} คน</td>
+                    <td style="text-align:center; color:#16a34a; font-size:13px;">100.0%</td>
                 </tr>`;
 
             tbody.innerHTML = html;
