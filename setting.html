@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ระบบบริหารจัดการ Master Data คุณวุฒิ — สตง.</title>
-    <!-- เรียกใช้ Core Engine ตัวกลางตัวเดียว -->
     <script src="classifier.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
@@ -211,7 +210,7 @@
         </button>
     </div>
 
-    <!-- AUDIT MATRIX MODAL -->
+    <!-- AUDIT MATRIX MODAL (มีคอลัมน์จำนวนวุฒิสะสม และจำนวนคนที่มีวุฒิ พร้อมคำว่า สัดส่วนต่อบุคลากร) -->
     <div id="audit-matrix-modal" class="modal-ov hidden">
         <div class="modal-box">
             <div class="modal-hd">
@@ -230,10 +229,11 @@
                         <thead>
                             <tr>
                                 <th style="width:50px; text-align:center;">ลำดับ</th>
-                                <th>กลุ่มสายงาน</th>
-                                <th style="width:130px; text-align:center;">จำนวนสาขา</th>
-                                <th style="width:170px; text-align:center;">จำนวนคนทั้งหมด</th>
-                                <th style="width:130px; text-align:center;">สัดส่วนร้อยละ</th>
+                                <th>กลุ่มสายงานวิชาชีพ</th>
+                                <th style="width:110px; text-align:center;">จำนวนสาขา</th>
+                                <th style="width:130px; text-align:center; background:#e0f2fe; color:#0369a1;">📜 จำนวนวุฒิ (ใบ)</th>
+                                <th style="width:140px; text-align:center; background:#f0fdf4; color:#15803d;">👤 จำนวนคน (คน)</th>
+                                <th style="width:140px; text-align:center;">สัดส่วนต่อบุคลากร (%)</th>
                             </tr>
                         </thead>
                         <tbody id="audit-matrix-tbody"></tbody>
@@ -436,6 +436,7 @@
             genericKeywords: [],
             exclusions: {},
             personOverrides: {},
+            personApproved: {},
             tierOverrides: {},
             tierDefaults: [1, 2, 3, 4, 5, 6],
             rules: []
@@ -1207,17 +1208,19 @@
             const g = (v78MasterData.groups || []).find(grp => grp.key === key); 
             return g ? g.name : key; 
         }
-function openAuditMatrixModal() {
+
+        function openAuditMatrixModal() {
             const tbody = document.getElementById('audit-matrix-tbody');
             tbody.innerHTML = '';
 
             const groupStats = {};
             (v78MasterData.groups || []).forEach(g => { 
-                groupStats[g.key] = { name: g.name, branches: new Set(), personSet: new Set(), color: g.color }; 
+                groupStats[g.key] = { name: g.name, branches: new Set(), degreeCount: 0, personSet: new Set(), color: g.color }; 
             });
-            groupStats['other'] = { name: '📝 ปริญญาสาขาอื่นๆ / วุฒิอื่นๆ', branches: new Set(), personSet: new Set(), color: '#6b7280' };
+            groupStats['other'] = { name: '📝 ปริญญาสาขาอื่นๆ / วุฒิอื่นๆ', branches: new Set(), degreeCount: 0, personSet: new Set(), color: '#6b7280' };
 
             let totalBranchesSet = new Set();
+            let totalDegreesAll = 0;
             let uniquePersonIds = new Set();
 
             branchDataMap.forEach((rec, b) => {
@@ -1227,6 +1230,7 @@ function openAuditMatrixModal() {
                 allPeople.forEach(p => {
                     const pKey = p.pos ? `${p.pos}_${p.name}` : p.id;
                     uniquePersonIds.add(pKey);
+                    totalDegreesAll++;
 
                     const pClass = classifyQualificationV80(p.level, p.degree, p.major, p.id, p);
                     const targetKey = (pClass.group && pClass.group !== 'none' && pClass.group !== 'review' && groupStats[pClass.group]) 
@@ -1234,13 +1238,14 @@ function openAuditMatrixModal() {
                         : 'other';
 
                     groupStats[targetKey].branches.add(b);
+                    groupStats[targetKey].degreeCount += 1;
                     groupStats[targetKey].personSet.add(pKey);
                 });
             });
 
             let html = '';
             let idx = 1;
-            const totalUniquePeople = uniquePersonIds.size;
+            const totalUniquePeople = uniquePersonIds.size; // 3,289 คน
 
             Object.entries(groupStats).forEach(([gKey, stat]) => {
                 const pCount = stat.personSet.size;
@@ -1253,17 +1258,19 @@ function openAuditMatrixModal() {
                             ${escapeHTML(stat.name)}
                         </td>
                         <td style="text-align:center;">${stat.branches.size} สาขา</td>
-                        <td style="text-align:center; font-weight:bold;">${pCount.toLocaleString()} คน</td>
-                        <td style="text-align:center; color:#0369a1; font-weight:bold;">${pct}%</td>
+                        <td style="text-align:center; font-weight:bold; color:#0369a1; background:#f8fafc;">${stat.degreeCount.toLocaleString()} ใบ</td>
+                        <td style="text-align:center; font-weight:bold; color:#15803d; background:#f8fafc;">${pCount.toLocaleString()} คน</td>
+                        <td style="text-align:center; color:#334155; font-weight:600;">${pct}%</td>
                     </tr>`;
             });
 
             html += `
                 <tr style="background:#f1f5f9; border-top:2px solid var(--primary); font-weight:bold;">
                     <td style="text-align:center;">-</td>
-                    <td style="color:var(--primary); font-size:13px;">📊 บุคลากรทั้งหมดที่กรองได้ (Unique People)</td>
+                    <td style="color:var(--primary); font-size:13px;">📊 รวมทั้งสิ้น (Grand Total)</td>
                     <td style="text-align:center; color:var(--primary);">${totalBranchesSet.size} สาขา</td>
-                    <td style="text-align:center; color:var(--primary); font-size:13px;">${totalUniquePeople.toLocaleString()} คน</td>
+                    <td style="text-align:center; color:#0369a1; font-size:13px;">${totalDegreesAll.toLocaleString()} ใบ</td>
+                    <td style="text-align:center; color:#15803d; font-size:13px;">${totalUniquePeople.toLocaleString()} คน (คนจริง)</td>
                     <td style="text-align:center; color:#16a34a; font-size:13px;">100.0%</td>
                 </tr>`;
 
@@ -1280,11 +1287,11 @@ function openAuditMatrixModal() {
 
             const s1 = workbook.addWorksheet('1. สรุปภาพรวมรายกลุ่ม', { views: [{ showGridLines: true }] });
             s1.addRow([`รายงานสรุปโครงสร้าง Master Data Matrix สตง. - ข้อมูล ณ วันที่ ${timeStampStr}`]);
-            s1.mergeCells('A1:E1');
+            s1.mergeCells('A1:F1');
             s1.getCell('A1').font = { name: 'Arial', size: 12, bold: true, color: { argb: '1F4E78' } };
             s1.addRow([]);
 
-            const h1 = s1.addRow(['ลำดับ', 'กลุ่มสายงาน', 'จำนวนสาขาวิชาเอกที่ผูก', 'จำนวนบุคลากร (คน)', 'สัดส่วนร้อยละ (%)']);
+            const h1 = s1.addRow(['ลำดับ', 'กลุ่มสายงาน', 'จำนวนสาขาวิชาเอกที่ผูก', 'จำนวนวุฒิสะสม (ใบ)', 'จำนวนบุคลากร (คน)', 'สัดส่วนต่อบุคลากร (%)']);
             h1.height = 25;
             h1.eachCell(c => {
                 c.font = { name: 'Arial', size: 11, bold: true, color: { argb: 'FFFFFF' } };
@@ -1293,38 +1300,38 @@ function openAuditMatrixModal() {
             });
 
             const groupStats = {};
-            (v78MasterData.groups || []).forEach(g => { groupStats[g.key] = { name: g.name, branches: 0, persons: 0 }; });
-            groupStats['other'] = { name: '📝 ปริญญาสาขาอื่นๆ / วุฒิอื่นๆ', branches: 0, persons: 0 };
+            (v78MasterData.groups || []).forEach(g => { groupStats[g.key] = { name: g.name, branches: new Set(), degreeCount: 0, personSet: new Set() }; });
+            groupStats['other'] = { name: '📝 ปริญญาสาขาอื่นๆ / วุฒิอื่นๆ', branches: new Set(), degreeCount: 0, personSet: new Set() };
 
-            let totalPersonsAll = 0;
+            let totalDegreesAll = 0;
             let totalBranchesSet = new Set();
             let uniquePersonIds = new Set();
 
             branchDataMap.forEach((rec, b) => {
                 totalBranchesSet.add(b);
-                const status = getBranchResolutionStatus(b);
-                [...rec.normalItems, ...rec.miskeyItems].forEach(p => uniquePersonIds.add(p.pos ? `${p.pos}_${p.name}` : p.id));
+                const allPeople = [...rec.normalItems, ...rec.miskeyItems];
+                allPeople.forEach(p => {
+                    const pKey = p.pos ? `${p.pos}_${p.name}` : p.id;
+                    uniquePersonIds.add(pKey);
+                    totalDegreesAll++;
 
-                let branchGroupMapped = false;
-                Object.entries(status.groupCounts).forEach(([gKey, count]) => {
-                    if (groupStats[gKey]) {
-                        groupStats[gKey].branches += 1;
-                        groupStats[gKey].persons += count;
-                        totalPersonsAll += count;
-                        branchGroupMapped = true;
-                    }
+                    const pClass = classifyQualificationV80(p.level, p.degree, p.major, p.id, p);
+                    const targetKey = (pClass.group && pClass.group !== 'none' && pClass.group !== 'review' && groupStats[pClass.group]) 
+                        ? pClass.group 
+                        : 'other';
+
+                    groupStats[targetKey].branches.add(b);
+                    groupStats[targetKey].degreeCount += 1;
+                    groupStats[targetKey].personSet.add(pKey);
                 });
-                if (status.pending > 0) {
-                    if (!branchGroupMapped) groupStats['other'].branches += 1;
-                    groupStats['other'].persons += status.pending;
-                    totalPersonsAll += status.pending;
-                }
             });
 
             let s1Idx = 1;
+            const totalUniqueCount = uniquePersonIds.size;
+
             Object.entries(groupStats).forEach(([_, stat]) => {
-                const pct = totalPersonsAll > 0 ? ((stat.persons / totalPersonsAll) * 100).toFixed(1) : 0;
-                const r = s1.addRow([s1Idx++, stat.name, stat.branches, stat.persons, parseFloat(pct)]);
+                const pct = totalUniqueCount > 0 ? ((stat.personSet.size / totalUniqueCount) * 100).toFixed(1) : 0;
+                const r = s1.addRow([s1Idx++, stat.name, stat.branches.size, stat.degreeCount, stat.personSet.size, parseFloat(pct)]);
                 r.eachCell((c, col) => {
                     c.font = { name: 'Arial', size: 10 };
                     c.alignment = { horizontal: (col === 2 ? 'left' : 'center'), vertical: 'middle' };
@@ -1333,9 +1340,10 @@ function openAuditMatrixModal() {
 
             const totalRow = s1.addRow([
                 '-',
-                `รวมทั้งสิ้น (จากบุคลากรจริง ${uniquePersonIds.size} คน)`,
+                `รวมทั้งสิ้น (จากบุคลากรจริง ${totalUniqueCount} คน)`,
                 totalBranchesSet.size,
-                totalPersonsAll,
+                totalDegreesAll,
+                totalUniqueCount,
                 100.0
             ]);
             totalRow.height = 26;
@@ -1771,7 +1779,8 @@ function openAuditMatrixModal() {
                 const payloadData = {
                     ...v78MasterData,
                     tierDefaults: v78MasterData.tierDefaults || [1, 2, 3, 4, 5, 6],
-                    tierOverrides: v78MasterData.tierOverrides || {}
+                    tierOverrides: v78MasterData.tierOverrides || {},
+                    personApproved: v78MasterData.personApproved || {}
                 };
 
                 const res = await fetch(`${API_BASE}/api/saveRules`, {
